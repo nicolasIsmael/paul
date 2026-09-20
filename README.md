@@ -70,7 +70,10 @@ XLM), explora y compara pools de inversión fraccionada sobre facturas de confir
 detalle de un pool (composición agregada, rendimiento ilustrativo y colchón de pérdida por
 tramo), cotiza y confirma un aporte a un tramo (senior o junior), y consulta sus posiciones.
 Exclusivamente backend — ver `specs/20260920-113925-inversion-pools-aporte/contracts/` para el
-contrato de cada operación.
+contrato de cada operación, y
+[frontend-integration.md](specs/20260920-113925-inversion-pools-aporte/frontend-integration.md)
+para una guía práctica de integración (explorar, saldo/recarga, cotizar y confirmar un aporte,
+posiciones, y el registro completo de códigos de error).
 
 Piezas clave:
 - **Entidades del dominio** (`empresas_pagadoras`, `operaciones`, `pools`, `tramos`): sin ningún
