@@ -150,3 +150,22 @@ El frontend queda disponible en `http://127.0.0.1:4173`. Nunca se debe colocar
 Si todavía no se cuenta con la clave pública, la pantalla de configuración permite abrir una
 vista previa local con datos ficticios. Este modo solo existe durante desarrollo y no reemplaza
 las pruebas contra Supabase.
+
+### Despliegue en Vercel
+
+El proyecto se despliega desde la raíz del repositorio. `vercel.json` configura el build del
+workspace y las rutas de React Router.
+
+- Root Directory: `.` (raíz del repositorio)
+- Framework Preset: `Vite`
+- Install Command: `npm ci`
+- Build Command: `npm run build`
+- Output Directory: `apps/web/dist`
+
+Agregar en Vercel para Production, Preview y Development:
+
+- `VITE_SUPABASE_URL=https://qqpozotcrxfukkwcoget.supabase.co`
+- `VITE_SUPABASE_ANON_KEY=<clave anon/publishable del proyecto>`
+
+Después de crear o modificar variables, es necesario iniciar un nuevo deployment para que Vite
+las incorpore durante el build.
