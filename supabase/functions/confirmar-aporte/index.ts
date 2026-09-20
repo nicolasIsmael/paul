@@ -13,6 +13,12 @@ import { obtenerBalanceXlm, pagarXlm } from "../_shared/stellar-payment.ts";
 
 const RESERVA_MINIMA_XLM = 2;
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 type ErrorApi = { code: string; message: string; [extra: string]: unknown };
 
 type Aporte = {
@@ -37,7 +43,7 @@ const supabaseService: SupabaseClient = createClient(
 function respuestaError(error: ErrorApi, status: number): Response {
   return new Response(JSON.stringify({ ok: false, error }), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
 }
 
@@ -73,11 +79,15 @@ function respuestaDesdeAporte(aporte: Aporte): Response {
         simulado: aporte.comprobante_simulado,
       },
     }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
+    { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
   );
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return respuestaError({ code: "PA008", message: "Falta autenticación." }, 401);

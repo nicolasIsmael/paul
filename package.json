@@ -1,4 +1,15 @@
 {
+  "name": "paul-platform",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@paul/web",
+    "build": "npm run build --workspace=@paul/web",
+    "typecheck": "npm run typecheck --workspace=@paul/web",
+    "preview": "npm run preview --workspace=@paul/web"
+  },
   "devDependencies": {
     "supabase": "^2.117.0"
   }
