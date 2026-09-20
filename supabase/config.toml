@@ -67,7 +67,10 @@ schema_paths = []
 enabled = true
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+# Reorganizado en specs/20260920-113925-inversion-pools-aporte (T002): archivos numerados bajo
+# seed/, aplicados en orden alfabético. 00_ es solo local (auth.users demo); 01_/02_ son seguros
+# para aplicarse también contra el proyecto remoto (ver quickstart.md de esa feature).
+sql_paths = ["./seed/*.sql"]
 
 [db.network_restrictions]
 # Enable management of network restrictions.
@@ -380,6 +383,20 @@ policy = "per_worker"
 inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
+
+# Invocadas exclusivamente por un Database Webhook con su propio secreto compartido (nunca por un
+# cliente) — sin JWT que verificar. Ver contracts/provision-investor-wallet-function.md y
+# contracts/provision-pool-custody-function.md.
+[functions.provision-investor-wallet]
+verify_jwt = false
+
+[functions.provision-pool-custody]
+verify_jwt = false
+
+# Invocada directamente por el cliente autenticado — el JWT del inversionista es la autenticación
+# (contracts/confirmar-aporte-function.md).
+[functions.confirmar-aporte]
+verify_jwt = true
 
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"

@@ -1,9 +1,15 @@
+-- SOLO LOCAL — NUNCA ejecutar este archivo contra el proyecto remoto (qqpozotcrxfukkwcoget).
+-- Las 4 cuentas demo (3 inversionistas + 1 operador) ya existen ahí de verdad, creadas por la
+-- feature previa (specs/20260919-131233-auth-perfil-usuario), con billeteras reales ya
+-- aprovisionadas. Re-ejecutar este archivo en local (supabase db reset) recrea esas mismas
+-- cuentas de forma idempotente (on conflict do nothing) para poder probar todo el flujo sin
+-- depender del proyecto remoto.
+--
 -- Feature: Registro, Inicio de Sesión y Perfil de Usuario (specs/20260919-131233-auth-perfil-usuario)
--- T021-T022: cuentas de demostración precargadas (Historia 4). Inserta directamente en
--- auth.users para que el trigger on_auth_user_created (0002_wallet_provisioning.sql) se dispare
--- igual que en un registro real -- incluido el aprovisionamiento real de wallet para los
--- inversionistas demo, vía el mismo Database Webhook. Nada de esto se hace desde el Dashboard
--- (Principio VII).
+-- Migrado desde el antiguo supabase/seed.sql como parte de
+-- specs/20260920-113925-inversion-pools-aporte (T001) — mismo contenido, con
+-- `on conflict (id) do nothing` añadido a ambos inserts para que sea seguro re-ejecutarlo incluso
+-- si, por error, se corriera dos veces o contra un entorno que ya tiene estas filas.
 --
 -- Credenciales (no son secretas, ver spec.md > Assumptions; documentadas también en README.md):
 --   inversionista.demo1@paul.test / DemoStellar2026!
@@ -25,7 +31,7 @@ begin
   -- IMPORTANTE: `email_change` debe ser '' y no NULL (default de la columna) — si queda NULL,
   -- GoTrue falla con "converting NULL to string is unsupported" al buscar duplicados en
   -- CUALQUIER intento de registro posterior, no solo con estas cuentas. Detectado y corregido
-  -- durante T018 (validación de Historia 1) contra el proyecto real.
+  -- durante T018 de la feature previa (validación de Historia 1) contra el proyecto real.
   insert into
     auth.users (
       instance_id,
@@ -71,7 +77,8 @@ begin
     '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('rol', 'operador_banco', 'nombre_completo', 'Operador Demo Banco'),
     '', '', '', '', '', '', '', now(), now()
-  );
+  )
+  on conflict (id) do nothing;
 
   insert into
     auth.identities (
@@ -100,12 +107,12 @@ begin
     gen_random_uuid (), v_op1::text, v_op1,
     jsonb_build_object('sub', v_op1::text, 'email', 'operador.demo@paul.test'),
     'email', now(), now(), now()
-  );
+  )
+  on conflict (provider, provider_id) do nothing;
 
-  -- T022: marcar como cuentas de demostración. El trigger on_auth_user_created ya creó la fila
-  -- de perfiles correspondiente a cada insert de arriba; aquí solo se actualiza el flag
-  -- es_cuenta_demo (ejecutado como postgres/dueño, no como `authenticated`, así que el REVOKE
-  -- UPDATE de 0001_perfiles.sql no aplica a esta sentencia).
+  -- El trigger on_auth_user_created ya creó la fila de perfiles correspondiente a cada insert de
+  -- arriba; aquí solo se actualiza el flag es_cuenta_demo (ejecutado como postgres/dueño, no como
+  -- `authenticated`, así que el REVOKE UPDATE de 0001_perfiles.sql no aplica a esta sentencia).
   update public.perfiles
   set
     es_cuenta_demo = true

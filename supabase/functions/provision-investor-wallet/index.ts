@@ -8,12 +8,14 @@
 // que la autenticación es propia — un secreto compartido guardado en Supabase Vault
 // ('webhook_shared_secret'), comparado en cada request contra el header x-webhook-secret que
 // envía el trigger (ver comentario en 0002_wallet_provisioning.sql).
+//
+// T024 (specs/20260920-113925-inversion-pools-aporte): refactorizada para reutilizar
+// _shared/stellar-keypair.ts (generar + fondear el keypair) en vez de duplicar esa lógica — el
+// mismo helper ahora también lo usa provision-pool-custody/index.ts. Comportamiento sin cambios.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { Keypair } from "npm:@stellar/stellar-sdk@^13";
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const FRIENDBOT_URL = "https://friendbot.stellar.org";
+import { generarYFondearKeypair } from "../_shared/stellar-keypair.ts";
 
 type WebhookPayload = {
   type: "INSERT" | "UPDATE";
@@ -64,18 +66,16 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: true, skipped: true }), { status: 200 });
   }
 
-  // T013: generar el keypair real de Stellar testnet.
-  const keypair = Keypair.random();
-  const publicKey = keypair.publicKey();
-  const secretKey = keypair.secret();
-
-  // T014: fondear en testnet vía Friendbot. Si falla, no se continúa — el perfil queda con
-  // wallet_public_key/wallet_secret_id en NULL, reintentable (ver Edge Case de la spec).
-  const friendbotResponse = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(publicKey)}`);
-  if (!friendbotResponse.ok) {
-    const detalle = await friendbotResponse.text();
+  // T013-T014: generar el keypair real de Stellar testnet y fondearlo vía Friendbot. Si el
+  // fondeo falla, no se continúa — el perfil queda con wallet_public_key/wallet_secret_id en
+  // NULL, reintentable (ver Edge Case de la spec).
+  let publicKey: string;
+  let secretKey: string;
+  try {
+    ({ publicKey, secretKey } = await generarYFondearKeypair());
+  } catch (err) {
     return new Response(
-      JSON.stringify({ ok: false, error: `friendbot_fallo: ${detalle}` }),
+      JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }),
       { status: 500 },
     );
   }
