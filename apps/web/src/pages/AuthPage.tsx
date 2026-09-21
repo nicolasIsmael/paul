@@ -21,6 +21,12 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const normalizedEmail = email.trim();
+  const normalizedName = name.trim();
+  const normalizedPhone = phone.trim();
+  const phoneDigits = normalizedPhone.replace(/\D/g, "");
+  const phoneValid = !normalizedPhone || (phoneDigits.length >= 7 && phoneDigits.length <= 15);
+  const canSubmit = normalizedEmail.includes("@") && password.length >= 8 && (mode === "login" || (normalizedName.length >= 2 && phoneValid));
 
   if (session) return <Navigate to="/" replace />;
 
@@ -31,9 +37,9 @@ export function AuthPage() {
     setMessage("");
     try {
       if (mode === "login") {
-        await signIn(email, password);
+        await signIn(normalizedEmail, password);
       } else {
-        const result = await signUp({ email, password, name, phone, role });
+        const result = await signUp({ email: normalizedEmail, password, name: normalizedName, phone: normalizedPhone, role });
         if (result.needsEmailConfirmation) {
           setMessage("Revisa tu correo para confirmar la cuenta y luego inicia sesión.");
           setMode("login");
@@ -90,15 +96,15 @@ export function AuthPage() {
                   <label className={role === "inversionista" ? "selected" : ""}><input type="radio" name="role" value="inversionista" checked={role === "inversionista"} onChange={() => setRole("inversionista")} /><span><strong>Inversionista</strong><small>Explorar y aportar</small></span></label>
                   <label className={role === "operador_banco" ? "selected" : ""}><input type="radio" name="role" value="operador_banco" checked={role === "operador_banco"} onChange={() => setRole("operador_banco")} /><span><strong>Operador</strong><small>Supervisar pools</small></span></label>
                 </fieldset>
-                <label className="field"><span>Nombre completo</span><div className="input-wrap"><UserRound size={18} /><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tu nombre y apellido" required /></div></label>
-                <label className="field"><span>Teléfono <small>Opcional</small></span><div className="input-wrap"><Phone size={18} /><input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+51 999 999 999" inputMode="tel" /></div></label>
+                <label className="field"><span>Nombre completo</span><div className="input-wrap"><UserRound size={18} /><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Tu nombre y apellido" autoComplete="name" minLength={2} required /></div></label>
+                <label className="field"><span>Teléfono <small>Opcional</small></span><div className="input-wrap"><Phone size={18} /><input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+51 999 999 999" inputMode="tel" autoComplete="tel" aria-invalid={!phoneValid} aria-describedby="register-phone-help" /></div>{!phoneValid && <small className="field-error" id="register-phone-help">Ingresa entre 7 y 15 dígitos.</small>}</label>
               </>
             )}
             <label className="field"><span>Correo electrónico</span><div className="input-wrap"><Mail size={18} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@correo.com" autoComplete="email" required /></div></label>
             <label className="field"><span>Contraseña</span><div className="input-wrap"><LockKeyhole size={18} /><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required /><button type="button" className="input-action" onClick={() => setShowPassword((show) => !show)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
             {error && <Notice tone="warning">{error}</Notice>}
             {message && <Notice tone="success">{message}</Notice>}
-            <Button type="submit" size="lg" disabled={busy}>{busy ? "Procesando..." : mode === "login" ? <>Ingresar <ArrowRight size={18} /></> : <>Crear cuenta <ArrowRight size={18} /></>}</Button>
+            <Button type="submit" size="lg" disabled={busy || !canSubmit} aria-busy={busy}>{busy ? "Procesando..." : mode === "login" ? <>Ingresar <ArrowRight size={18} /></> : <>Crear cuenta <ArrowRight size={18} /></>}</Button>
           </form>
 
           {mode === "login" && <button className="demo-access" type="button" onClick={useDemoAccount}>Usar cuenta de demostración</button>}

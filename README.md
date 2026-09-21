@@ -136,7 +136,7 @@ detalle de pools, saldo y recarga de demostración, flujo de cotización/aporte,
 y wallet. La interfaz consume directamente los contratos Supabase documentados en `specs/`.
 
 1. Copiar `apps/web/.env.example` como `apps/web/.env`.
-2. Completar `VITE_SUPABASE_ANON_KEY` con la clave pública `anon`/`publishable` del proyecto.
+2. Completar `VITE_SUPABASE_PUBLISHABLE_KEY` con la clave pública `publishable` del proyecto.
 3. Instalar y ejecutar desde la raíz:
 
 ```bash
@@ -165,7 +165,7 @@ workspace y las rutas de React Router.
 Agregar en Vercel para Production, Preview y Development:
 
 - `VITE_SUPABASE_URL=https://qqpozotcrxfukkwcoget.supabase.co`
-- `VITE_SUPABASE_ANON_KEY=<clave anon/publishable del proyecto>`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=<clave publishable del proyecto>`
 
 Después de crear o modificar variables, es necesario iniciar un nuevo deployment para que Vite
 las incorpore durante el build.

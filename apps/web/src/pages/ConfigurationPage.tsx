@@ -16,7 +16,7 @@ export function ConfigurationPage() {
             <TerminalSquare size={19} />
             <code>apps/web/.env</code>
           </div>
-          <pre><code>{`VITE_SUPABASE_URL=https://qqpozotcrxfukkwcoget.supabase.co\nVITE_SUPABASE_ANON_KEY=tu_clave_publica`}</code></pre>
+          <pre><code>{`VITE_SUPABASE_URL=https://qqpozotcrxfukkwcoget.supabase.co\nVITE_SUPABASE_PUBLISHABLE_KEY=tu_clave_publica`}</code></pre>
           <Notice>Usa únicamente la clave <strong>anon/publishable</strong>. Nunca coloques la clave <strong>service_role</strong> en el frontend.</Notice>
           <a className="button button--secondary button--lg configuration-preview" href="/?preview=1">Explorar vista previa local <ArrowRight size={17} /></a>
         </Panel>

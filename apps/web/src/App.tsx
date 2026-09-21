@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
-import { PageLoader } from "./components/ui";
+import { Button, ErrorState, PageLoader } from "./components/ui";
 import { useAuth } from "./context/AuthContext";
 import { isPreviewMode, isSupabaseConfigured } from "./lib/supabase";
 import { AuthPage } from "./pages/AuthPage";
@@ -15,9 +15,17 @@ const PositionsPage = lazy(() => import("./pages/PositionsPage").then((module) =
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
 
 function ProtectedLayout() {
-  const { session, profile, loading, profileLoading } = useAuth();
+  const { session, profile, loading, profileLoading, profileError, refreshProfile, signOut } = useAuth();
   if (loading || (session && profileLoading && !profile)) return <PageLoader />;
   if (!session) return <Navigate to="/acceso" replace />;
+  if (!profile && profileError) {
+    return (
+      <main className="route-error-page">
+        <ErrorState message={profileError} retry={() => void refreshProfile()} />
+        <Button variant="ghost" onClick={() => void signOut()}>Cerrar sesión</Button>
+      </main>
+    );
+  }
   if (!profile) return <PageLoader label="Sincronizando tu perfil" />;
   return <AppShell />;
 }

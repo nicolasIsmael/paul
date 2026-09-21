@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Button, ErrorState, Modal, Notice, Panel, Progress, Spinner } from "../components/ui";
+import { Badge, Button, ErrorState, Modal, Notice, Panel, Progress, Skeleton } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { normalizeError } from "../lib/errors";
@@ -41,7 +41,7 @@ export function PoolDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (loading) return <Spinner label="Cargando oportunidad" />;
+  if (loading) return <DetailSkeleton />;
   if (error || !detail) return <ErrorState message={error || "No encontramos este pool."} retry={() => void load()} />;
 
   const canInvest = profile?.rol === "inversionista" && detail.estado === "abierto" && Boolean(profile.wallet_public_key);
@@ -89,6 +89,7 @@ function InvestmentModal({ open, onClose, detail, initialTranche, session, onSuc
   const [quote, setQuote] = useState<Quote | null>(null);
   const [result, setResult] = useState<ContributionResult | null>(null);
   const [error, setError] = useState<ApiErrorShape | null>(null);
+  const [quoteBusy, setQuoteBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const idempotencyKey = useRef(crypto.randomUUID());
 
@@ -96,15 +97,24 @@ function InvestmentModal({ open, onClose, detail, initialTranche, session, onSuc
   useEffect(() => { if (step !== "quote") return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [step]);
 
   const secondsLeft = useMemo(() => quote ? Math.max(0, Math.floor((new Date(quote.expira_at).getTime() - now) / 1000)) : 0, [now, quote]);
-  const isAmountValid = Number(amount) > 0 && Number(amount) % Number(detail.aporte_minimo.monto) === 0 && Number(amount) <= detail.tramos[tranche].cupo_disponible;
+  const numericAmount = Number(amount);
+  const minimumAmount = Number(detail.aporte_minimo.monto);
+  const amountRatio = numericAmount / minimumAmount;
+  const isAmountValid = Number.isFinite(numericAmount)
+    && numericAmount >= minimumAmount
+    && Math.abs(amountRatio - Math.round(amountRatio)) < 0.0000001
+    && numericAmount <= detail.tramos[tranche].cupo_disponible;
 
   function resetAndClose() { setStep("amount"); setQuote(null); setResult(null); setError(null); idempotencyKey.current = crypto.randomUUID(); onClose(); }
 
   async function createQuote(event?: FormEvent) {
     event?.preventDefault();
+    if (quoteBusy || !isAmountValid) return;
+    setQuoteBusy(true);
     setError(null);
-    try { const nextQuote = await api.quote(detail.id, tranche, Number(amount)); setQuote(nextQuote); setNow(Date.now()); setStep("quote"); }
+    try { const nextQuote = await api.quote(detail.id, tranche, numericAmount); setQuote(nextQuote); setNow(Date.now()); idempotencyKey.current = crypto.randomUUID(); setStep("quote"); }
     catch (cause) { setError(normalizeError(cause)); }
+    finally { setQuoteBusy(false); }
   }
 
   async function confirm() {
@@ -112,14 +122,32 @@ function InvestmentModal({ open, onClose, detail, initialTranche, session, onSuc
     if (secondsLeft <= 0) { setError({ code: "PA004", message: "La cotización expiró. Genera una nueva para continuar." }); setStep("amount"); setQuote(null); return; }
     setStep("processing"); setError(null);
     try { const confirmation = await api.confirmContribution(session, quote.cotizacion_id, idempotencyKey.current); setResult(confirmation); setStep("success"); onSuccess(); }
-    catch (cause) { setError(normalizeError(cause)); setStep("quote"); }
+    catch (cause) {
+      const normalized = normalizeError(cause);
+      setError(normalized);
+      if (["PA004", "PA005", "PA013"].includes(normalized.code)) {
+        setQuote(null);
+        idempotencyKey.current = crypto.randomUUID();
+        setStep("amount");
+      } else {
+        setStep("quote");
+      }
+    }
   }
 
   const title = step === "success" ? "Aporte confirmado" : step === "processing" ? "Procesando en Stellar" : "Realizar un aporte";
-  return <Modal open={open} title={title} description={step === "success" ? "Tu posición ya forma parte del portafolio." : detail.nombre} onClose={resetAndClose}>
-    {step === "amount" && <form className="modal-form" onSubmit={(event) => void createQuote(event)}><div className="segmented-control"><button type="button" className={tranche === "senior" ? "active" : ""} onClick={() => setTranche("senior")}>Senior</button><button type="button" className={tranche === "junior" ? "active" : ""} onClick={() => setTranche("junior")}>Junior</button></div><label className="field"><span>Monto del aporte</span><div className="amount-input"><span>{detail.moneda === "PEN" ? "S/" : "US$"}</span><input type="number" min={detail.aporte_minimo.monto} step={detail.aporte_minimo.monto} max={detail.tramos[tranche].cupo_disponible} value={amount} onChange={(event) => setAmount(event.target.value)} /></div></label><div className="input-meta"><span>Múltiplos de {money(detail.aporte_minimo.monto, detail.moneda)}</span><span>Cupo: {money(detail.tramos[tranche].cupo_disponible, detail.moneda)}</span></div>{error && <Notice tone="warning">{error.message}</Notice>}<Button size="lg" type="submit" disabled={!isAmountValid}>Obtener cotización <ArrowRight size={18} /></Button></form>}
-    {step === "quote" && quote && <div className="quote-review"><div className="quote-total"><span>Tu aporte</span><strong>{money(quote.monto_nominal, quote.moneda)}</strong><small>{number(quote.monto_xlm, 4)} XLM</small></div><div className="quote-details"><div><span>Tramo</span><strong>{trancheLabel(quote.tramo_tipo)}</strong></div><div><span>Tipo de cambio</span><strong>1 XLM = {number(quote.tipo_cambio_aplicado, 4)} {quote.moneda}</strong></div><div><span>Vigencia</span><strong className={secondsLeft < 60 ? "text-warning" : ""}>{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}</strong></div></div><Notice>{quote.tipo_cambio_nota}</Notice>{error && <Notice tone="warning">{error.message}</Notice>}<div className="modal-actions"><Button variant="secondary" onClick={() => setStep("amount")}>Editar monto</Button><Button onClick={() => void confirm()} disabled={secondsLeft <= 0}>Confirmar aporte</Button></div></div>}
+  return <Modal open={open} title={title} description={step === "success" ? "Tu posición ya forma parte del portafolio." : detail.nombre} onClose={resetAndClose} dismissible={step !== "processing"}>
+    {step === "amount" && <form className="modal-form" onSubmit={(event) => void createQuote(event)}><div className="segmented-control"><button type="button" className={tranche === "senior" ? "active" : ""} onClick={() => { setTranche("senior"); setError(null); }}>Senior</button><button type="button" className={tranche === "junior" ? "active" : ""} onClick={() => { setTranche("junior"); setError(null); }}>Junior</button></div><label className="field"><span>Monto del aporte</span><div className="amount-input"><span>{detail.moneda === "PEN" ? "S/" : "US$"}</span><input data-modal-autofocus type="number" min={detail.aporte_minimo.monto} step={detail.aporte_minimo.monto} max={detail.tramos[tranche].cupo_disponible} value={amount} onChange={(event) => { setAmount(event.target.value); setError(null); }} aria-invalid={Boolean(amount) && !isAmountValid} /></div></label><div className="input-meta"><span>Múltiplos de {money(detail.aporte_minimo.monto, detail.moneda)}</span><span>Cupo: {money(detail.tramos[tranche].cupo_disponible, detail.moneda)}</span></div>{error && <ContributionError error={error} currency={detail.moneda} />}<Button size="lg" type="submit" disabled={!isAmountValid || quoteBusy} aria-busy={quoteBusy}>{quoteBusy ? "Cotizando..." : <>Obtener cotización <ArrowRight size={18} /></>}</Button></form>}
+    {step === "quote" && quote && <div className="quote-review"><div className="quote-total"><span>Tu aporte</span><strong>{money(quote.monto_nominal, quote.moneda)}</strong><small>{number(quote.monto_xlm, 4)} XLM</small></div><div className="quote-details"><div><span>Tramo</span><strong>{trancheLabel(quote.tramo_tipo)}</strong></div><div><span>Tipo de cambio</span><strong>1 XLM = {number(quote.tipo_cambio_aplicado, 4)} {quote.moneda}</strong></div><div><span>Vigencia</span><strong className={secondsLeft < 60 ? "text-warning" : ""}>{Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}</strong></div></div><Notice>{quote.tipo_cambio_nota}</Notice>{error && <ContributionError error={error} currency={detail.moneda} />}<div className="modal-actions"><Button variant="secondary" onClick={() => setStep("amount")}>Editar monto</Button>{secondsLeft > 0 ? <Button onClick={() => void confirm()}>Confirmar aporte</Button> : <Button onClick={() => { setQuote(null); setError(null); setStep("amount"); }}>Nueva cotización</Button>}</div></div>}
     {step === "processing" && <div className="processing-state"><span className="processing-state__rings"><span /><span /><img src="/paul-logo.png" alt="" /></span><h3>Confirmando tu aporte</h3><p>Estamos reservando el cupo y registrando el pago en Stellar Testnet. No cierres esta ventana.</p></div>}
     {step === "success" && result && <div className="success-block"><span><CheckCircle2 size={29} /></span><h3>{money(result.aporte.monto_nominal, result.aporte.moneda)}</h3><p>Aporte confirmado en el tramo {trancheLabel(tranche)}</p><div className="result-row"><span>XLM pagados</span><strong>{number(result.aporte.xlm_pagados, 4)} XLM</strong></div><div className="result-row"><span>Comprobante</span><strong>{result.comprobante.simulado ? "Simulado" : "Registrado en testnet"}</strong></div>{result.comprobante.tx_hash && !result.comprobante.simulado && <a className="stellar-link" href={`https://stellar.expert/explorer/testnet/tx/${result.comprobante.tx_hash}`} target="_blank" rel="noreferrer">Ver transacción en Stellar Expert <ExternalLink size={16} /></a>}<Button onClick={resetAndClose}>Listo</Button></div>}
   </Modal>;
+}
+
+function ContributionError({ error, currency }: { error: ApiErrorShape; currency: PoolDetail["moneda"] }) {
+  return <Notice tone="warning"><strong>{error.message}</strong>{error.cupo_disponible !== undefined && <span className="notice__detail">Cupo disponible: {money(error.cupo_disponible, currency)}</span>}<small className="notice__code">Referencia: {error.code}</small></Notice>;
+}
+
+function DetailSkeleton() {
+  return <div className="page-stack" role="status" aria-label="Cargando oportunidad"><Skeleton className="skeleton-back" /><div className="skeleton-detail-hero"><div><Skeleton className="skeleton-card__badge" /><Skeleton className="skeleton-heading__title" /><Skeleton className="skeleton-heading__copy" /></div><Skeleton className="skeleton-detail-hero__amount" /></div><div className="detail-layout"><div className="tranche-grid"><div className="skeleton-card"><Skeleton className="skeleton-card__title" /><Skeleton className="skeleton-card__block" /></div><div className="skeleton-card"><Skeleton className="skeleton-card__title" /><Skeleton className="skeleton-card__block" /></div></div><div className="skeleton-card"><Skeleton className="skeleton-card__title" /><Skeleton className="skeleton-card__block" /><Skeleton className="skeleton-card__button" /></div></div></div>;
 }

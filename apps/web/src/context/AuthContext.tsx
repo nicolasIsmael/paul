@@ -20,6 +20,7 @@ type AuthContextValue = {
   profile: Profile | null;
   loading: boolean;
   profileLoading: boolean;
+  profileError: string;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: RegisterInput) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
@@ -50,11 +51,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(isPreviewMode ? previewProfile : null);
   const [loading, setLoading] = useState(!isPreviewMode);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
 
   const loadProfile = useCallback(async (userId: string) => {
     setProfileLoading(true);
+    setProfileError("");
     try {
       setProfile(await api.profile(userId));
+    } catch (cause) {
+      const message = normalizeError(cause).message;
+      setProfile(null);
+      setProfileError(message);
+      throw cause;
     } finally {
       setProfileLoading(false);
     }
@@ -63,25 +71,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isPreviewMode) return;
     let active = true;
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!active) return;
-      setSession(data.session);
-      if (data.session) {
-        try {
-          await loadProfile(data.session.user.id);
-        } catch {
-          setProfile(null);
-        }
-      }
-      if (active) setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(async ({ data }) => {
+        if (!active) return;
+        setSession(data.session);
+        if (data.session) await loadProfile(data.session.user.id).catch(() => undefined);
+      })
+      .catch((cause) => {
+        if (active) setProfileError(normalizeError(cause).message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (!nextSession) {
         setProfile(null);
+        setProfileError("");
       } else {
-        setTimeout(() => void loadProfile(nextSession.user.id), 0);
+        setTimeout(() => void loadProfile(nextSession.user.id).catch(() => undefined), 0);
       }
     });
 
@@ -98,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       loading,
       profileLoading,
+      profileError,
       async signIn(email, password) {
         if (isPreviewMode) return;
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -141,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       },
     }),
-    [loadProfile, loading, profile, profileLoading, session],
+    [loadProfile, loading, profile, profileError, profileLoading, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
