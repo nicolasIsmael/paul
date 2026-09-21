@@ -1,0 +1,21 @@
+{
+  "red": "testnet",
+  "wasm_hash": "25af11fb4fc9febd1cf91991a8127e8f9d0b1d3b3467a6f39c8b69304b33f0ca",
+  "operador_authority_public_key": "GCNMCJME65W2ZOINJ6XJOZ2R5UOJ7AUIMZTTQ72G76KCI3FAH4KFZTH6",
+  "desplegado_at": "2026-09-20T20:15:00Z",
+  "wasm_upload_tx_hash": "e7bfd858245748cbd5e64b2d69f0eb61e890a6afd6f04d460432c9c243bdd71d",
+  "tramos": [
+    { "pool_codigo": "POOL-PEN-001", "tramo": "senior", "contract_id": "CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE" },
+    { "pool_codigo": "POOL-PEN-001", "tramo": "junior", "contract_id": "CAGPMH4CXI5L65VQXKPU3YQQLDEDFHOHX34CZZW2D6OS7HZ77WG5NZEN" },
+    { "pool_codigo": "POOL-PEN-002", "tramo": "senior", "contract_id": "CCGH3FI2775BI2KPA5HDTTRBSTSACE2X2H4ZJJ56NWGUBWQ2NWFGQBWO" },
+    { "pool_codigo": "POOL-PEN-002", "tramo": "junior", "contract_id": "CCHCJNBYUMSRZYIS3HFVU5WPK6QF3GLYCJ2PBJVDTYPIAZZAVSIZMC4J" },
+    { "pool_codigo": "POOL-PEN-003", "tramo": "senior", "contract_id": "CCQGYGRXNGEBOMZFJJL2KSATW6YDDUG3JHU3WAWFD7VYSLAEVVUYPZPR" },
+    { "pool_codigo": "POOL-PEN-003", "tramo": "junior", "contract_id": "CCKMMHEMDHZ76CKD66LJTKA7TIBFGNQU4FMAUDOFJKRYR5IUNBQJ4QP6" },
+    { "pool_codigo": "POOL-PEN-004", "tramo": "senior", "contract_id": "CDVYSMY73FLV4F7VDUJNTU7JW42UGJGGQ4M7LXBW2XFPBHFEBV2U2454" },
+    { "pool_codigo": "POOL-PEN-004", "tramo": "junior", "contract_id": "CD446D4FKDCBCZCB6WWL4U6J3XDWNKK5G5UZF5UAABI7LGHL7UQ3SDMN" },
+    { "pool_codigo": "POOL-PEN-005", "tramo": "senior", "contract_id": "CD32SZ36EPS3EJS4QWKOSAVCML7PC56RDI3NQRQNYZQBG7RGMIZDLZHJ" },
+    { "pool_codigo": "POOL-PEN-005", "tramo": "junior", "contract_id": "CAUSGVBMYK7XW7ZLNO4EB24RWFSQJL2CGATQNIZIFEQ4BMM6A62APSZ5" },
+    { "pool_codigo": "POOL-USD-001", "tramo": "senior", "contract_id": "CBZRTNXMHEPBDDORC5MU53B5A34FER4YPXB2ESXXP6D4XBQ74R7BPGDU" },
+    { "pool_codigo": "POOL-USD-001", "tramo": "junior", "contract_id": "CCNJRAVSYTT6VFMS6LOUG4Z6LV2IPKQGRHPN7NT4PH5VMBLS3U6MOTCV" }
+  ]
+}

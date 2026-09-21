@@ -398,6 +398,19 @@ verify_jwt = false
 [functions.confirmar-aporte]
 verify_jwt = true
 
+# Feature: Originación de Facturas y Tokenización de Fracciones de Pool
+# (specs/20260920-174938-originacion-facturas-pool)
+# Invocada exclusivamente por el Database Webhook de aprovisionamiento de contrato por tramo (ver
+# 0014_provision_pool_tramo_token.sql) — sin JWT que verificar, mismo patrón que
+# provision-investor-wallet/provision-pool-custody.
+[functions.provision-pool-tramo-token]
+verify_jwt = false
+
+# Invocada directamente por el cliente autenticado (operador de banco) — el JWT del operador es
+# la autenticación (contracts/asignar-factura-function.md).
+[functions.asignar-factura]
+verify_jwt = true
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

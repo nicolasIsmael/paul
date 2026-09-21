@@ -12,7 +12,7 @@ import {
   Networks,
   Operation,
   TransactionBuilder,
-} from "npm:@stellar/stellar-sdk@^13";
+} from "npm:@stellar/stellar-sdk@^17";
 
 const HORIZON_URL = "https://horizon-testnet.stellar.org";
 const TIMEOUT_MS = 25_000;

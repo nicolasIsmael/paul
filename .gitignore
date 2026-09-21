@@ -41,6 +41,7 @@ supabase/.temp/
 # --- Rust / Soroban (smart contract) ---
 target/
 **/*.rs.bk
+test_snapshots/
 
 # --- Python (scripts de .specify) ---
 __pycache__/

@@ -23,17 +23,36 @@ supabase/
 │   ├── 0007_saldo_demostracion.sql           # saldo de demostración off-chain + recarga
 │   ├── 0008_cotizaciones_aportes.sql         # cotizar/reservar/confirmar/revertir aporte, posiciones
 │   └── 0009_catalogo_consultas.sql           # catálogo y detalle de pools
+│   ├── 0010_configuracion_red.sql            # tabla de configuración por red Stellar (contrato)
+│   ├── 0011_proveedores_facturas.sql         # proveedores; rename operaciones->facturas + ciclo
+│   │                                          # de vida de originación; columnas nuevas de tramos
+│   ├── 0012_registro_y_asignacion_facturas.sql  # registrar_factura, asignar_factura_a_pool,
+│   │                                          # confirmar/revertir_asignacion_factura
+│   ├── 0013_facturas_del_pool_y_detalle.sql  # facturas_del_pool, detalle_pool extendido,
+│   │                                          # actualizar_estado_cobro_factura
+│   ├── 0014_provision_pool_tramo_token.sql   # trigger + Database Webhook por tramo nuevo
+│   └── 0015_mint_fracciones_aporte.sql       # soporte de emisión de fracciones + compensación
 ├── functions/
 │   ├── _shared/
 │   │   ├── stellar-keypair.ts                # generar + fondear + custodiar un keypair Stellar
-│   │   └── stellar-payment.ts                # balance XLM y pago (Payment) con timeout interno
+│   │   ├── stellar-payment.ts                # balance XLM y pago (Payment) con timeout interno
+│   │   └── stellar-soroban.ts                # invocar contratos Soroban con reintentos + lectura
 │   ├── provision-investor-wallet/            # Edge Function: wallet de cada inversionista
 │   ├── provision-pool-custody/               # Edge Function: cuenta de custodia de cada pool
-│   └── confirmar-aporte/                     # Edge Function: orquesta reserva -> pago -> confirmación
+│   ├── provision-pool-tramo-token/           # Edge Function: instancia el contrato de un tramo
+│   ├── confirmar-aporte/                     # Edge Function: reserva -> pago -> mint -> confirmación
+│   └── asignar-factura/                      # Edge Function: asigna una factura -> contrato
 └── seed/
     ├── 00_auth_demo_local.sql                # SOLO LOCAL — cuentas demo en auth.users
     ├── 01_dominio_demo.sql                   # pools, tramos, empresas, operaciones, tipo de cambio
-    └── 02_saldos_y_posiciones_demo.sql       # saldo y una posición previa para las cuentas demo
+    ├── 02_saldos_y_posiciones_demo.sql       # saldo y una posición previa para las cuentas demo
+    └── 03_originacion_facturas_demo.sql      # facturas de ejemplo en varios estados de cobro
+
+contracts/
+├── soroban-pool/                             # contrato Soroban (Rust) — un WASM, una instancia
+│                                              # por tramo (senior/junior de cada pool)
+├── scripts/deploy.sh                         # sube el WASM, instancia por tramo, publica config
+└── deployments/testnet.json                  # IDs de contrato + wasm_hash desplegados (sin secretos)
 ```
 
 Proyecto Supabase: **Stellar Odyssey** (`qqpozotcrxfukkwcoget`).
@@ -101,6 +120,66 @@ Piezas clave:
   conocida de *sequence number* de Stellar cuando la misma billetera somete varios pagos
   concurrentemente (no afecta el invariante de cupo, solo cuántos intentos legítimos se confirman
   al primer intento).
+
+### Módulo de originación de facturas y tokenización ([specs/20260920-174938-originacion-facturas-pool/](specs/20260920-174938-originacion-facturas-pool/))
+
+Un operador de banco registra y valida facturas de demostración (sin documento real) y las asigna
+manualmente a un pool/tramo definiendo un anticipo por factura — el fraccionamiento del tramo sale
+de la suma acumulada de anticipos, redondeada hacia abajo a la unidad mínima del pool (el residuo
+queda como reserva, sin rechazar ninguna factura). Cada tramo de cada pool se representa on-chain
+como una instancia propia de un contrato Soroban (`pool_fraction_token`, interfaz SEP-41 completa,
+1 fracción = 1 unidad mínima) que es la fuente de verdad: registra la huella de cada factura
+(nunca sus datos) y emite fracciones a un inversionista solo después de que su aporte ya se pagó
+en XLM real. El inversionista ve las facturas de cada pool en versión anonimizada (nunca proveedor
+ni deudor) junto con hechos de estado de cobro, sin ningún cálculo de rendimiento. Exclusivamente
+backend/contrato — ver `specs/20260920-174938-originacion-facturas-pool/contracts/` para el
+contrato de cada operación y del contrato inteligente.
+
+Piezas clave:
+- **`facturas`** (renombrada desde `operaciones`): ciclo de vida completo de originación —
+  registro/validación (`registrar_factura`), asignación con anticipo (`asignar_factura_a_pool`),
+  y confirmación on-chain (`confirmar_asignacion_factura`). Una factura rechazada por datos
+  incoherentes nunca se persiste; solo queda un registro `'rechazada'` cuando el dato en sí es
+  coherente pero duplicado.
+- **Contrato `pool_fraction_token`** (`contracts/soroban-pool/`): una instancia por tramo,
+  `decimals = 0`, admin-only `register_invoice`/`mint` con cupo (`Cap`) que nunca decrece ni se
+  excede — la garantía on-chain vive en el propio contrato, no solo en Postgres.
+- **El contrato manda**: un aporte solo se confirma en Supabase después de que el contrato emitió
+  las fracciones; si el contrato falla de forma definitiva tras el pago en XLM, la Edge Function
+  `confirmar-aporte` compensa automáticamente (reembolso XLM custodia→inversionista) antes de
+  revertir — nunca queda un aporte a medias.
+- **Estado real de esta feature**: todas las migraciones (0010–0015) y las 3 Edge Functions están
+  desplegadas, y el flujo completo — incluida la capa on-chain — está **validado en vivo contra
+  el proyecto y contra Stellar testnet real**. El contrato Soroban (`pool_fraction_token`) está
+  compilado (`cargo test`: 9/9 pruebas OK) y desplegado: una instancia por cada uno de los 12
+  tramos existentes (6 pools × senior/junior). Evidencia versionada en
+  `contracts/deployments/testnet.json`:
+  - **`wasm_hash`**: `25af11fb4fc9febd1cf91991a8127e8f9d0b1d3b3467a6f39c8b69304b33f0ca`
+  - **Contrato de ejemplo** (POOL-PEN-002 / senior): `CCGH3FI2775BI2KPA5HDTTRBSTSACE2X2H4ZJJ56NWGUBWQ2NWFGQBWO`
+  - **Transacción real de `register_invoice`** sobre ese contrato (factura de seed asignada en
+    vivo a través de la Edge Function `asignar-factura`, no un placeholder):
+    [`f4f276878251d6bd18745263af2d99126d35c852649f19639ceceaa4e82fbe80`](https://stellar.expert/explorer/testnet/tx/f4f276878251d6bd18745263af2d99126d35c852649f19639ceceaa4e82fbe80)
+  - Verificable de forma independiente: `stellar contract invoke --id CCGH3FI2775BI2KPA5HDTTRBSTSACE2X2H4ZJJ56NWGUBWQ2NWFGQBWO --source <cualquier-cuenta> --network testnet --send=no -- cap` devuelve `312` (= 3200 PEN / 100 unidad mínima del pool).
+  - **Aporte de inversionista de extremo a extremo**, también real (vía `confirmar-aporte`): pago
+    en XLM
+    ([`bf94488143dadffaf197d0930da0ba6f965821820336e400e2cec4bf8845fc38`](https://stellar.expert/explorer/testnet/tx/bf94488143dadffaf197d0930da0ba6f965821820336e400e2cec4bf8845fc38))
+    seguido de `mint` on-chain
+    ([`126d725275572e8f31716c7a1042e3be82a454f709aa1720bcd43814bfcbc8bb`](https://stellar.expert/explorer/testnet/tx/126d725275572e8f31716c7a1042e3be82a454f709aa1720bcd43814bfcbc8bb)) —
+    `balance()` del inversionista quedó en `1` (100 PEN / 100 unidad mínima), `total_supply()` en
+    `1`, `cap()` sin cambios en `312`.
+  - Bugs reales encontrados y corregidos durante esta validación — ver
+    `supabase/functions/_shared/stellar-soroban.ts` para el detalle exacto de cada uno:
+    1. Deno no expone el global `Buffer` de Node (`Buffer is not defined`).
+    2. **Crítico**: `@stellar/stellar-sdk@^13` no puede parsear `getTransaction()` contra una red
+       en protocolo 28 (`Bad union switch: 4` al leer la meta de la transacción). Esto hacía que
+       toda invocación exitosa lanzara una excepción justo después de confirmarse on-chain,
+       disparando reintentos que sometían la misma operación varias veces más — inofensivo para
+       `register_invoice` (el contrato deduplica por huella), pero causó una emisión **duplicada
+       real** de fracciones con `mint` (que no tiene esa protección) antes de detectarse. Las
+       fracciones fantasma se quemaron (`burn`) para reconciliar el estado, y el pago
+       correspondiente ya se había reembolsado automáticamente. Corregido subiendo a
+       `@stellar/stellar-sdk@^17` en los 3 archivos que lo usan, verificado con una repetición
+       limpia del mismo aporte (evidencia de arriba).
 
 ## Cuentas de demostración
 
