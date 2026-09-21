@@ -207,3 +207,44 @@ vacío, uno a medio fondear, uno casi lleno, uno completamente fondeado).
 - Requiere el [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)
   (ya incluido como dependencia de desarrollo en `package.json`).
 - Copiar `.env.example` a `.env` y completar los valores reales (nunca commitear `.env`).
+
+## Frontend web
+
+La aplicación React está en `apps/web`. Incluye acceso y registro, panel principal, catálogo y
+detalle de pools, saldo y recarga de demostración, flujo de cotización/aporte, posiciones, perfil
+y wallet. La interfaz consume directamente los contratos Supabase documentados en `specs/`.
+
+1. Copiar `apps/web/.env.example` como `apps/web/.env`.
+2. Completar `VITE_SUPABASE_PUBLISHABLE_KEY` con la clave pública `publishable` del proyecto.
+3. Instalar y ejecutar desde la raíz:
+
+```bash
+npm install
+npm run dev
+```
+
+El frontend queda disponible en `http://127.0.0.1:4173`. Nunca se debe colocar
+`SUPABASE_SERVICE_ROLE_KEY` en `apps/web/.env` ni en código cliente.
+
+Si todavía no se cuenta con la clave pública, la pantalla de configuración permite abrir una
+vista previa local con datos ficticios. Este modo solo existe durante desarrollo y no reemplaza
+las pruebas contra Supabase.
+
+### Despliegue en Vercel
+
+El proyecto se despliega desde la raíz del repositorio. `vercel.json` configura el build del
+workspace y las rutas de React Router.
+
+- Root Directory: `.` (raíz del repositorio)
+- Framework Preset: `Vite`
+- Install Command: `npm ci`
+- Build Command: `npm run build`
+- Output Directory: `apps/web/dist`
+
+Agregar en Vercel para Production, Preview y Development:
+
+- `VITE_SUPABASE_URL=https://qqpozotcrxfukkwcoget.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=<clave publishable del proyecto>`
+
+Después de crear o modificar variables, es necesario iniciar un nuevo deployment para que Vite
+las incorpore durante el build.
