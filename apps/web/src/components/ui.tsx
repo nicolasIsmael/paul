@@ -1,6 +1,7 @@
 import { AlertCircle, Check, Inbox, LoaderCircle, X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export function Button({
   variant = "primary",
@@ -164,7 +165,7 @@ export function Modal({
   }, [dismissible, open]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={() => dismissible && onClose()}>
       <section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal__header">
@@ -173,7 +174,8 @@ export function Modal({
         </header>
         <div className="modal__body">{children}</div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
