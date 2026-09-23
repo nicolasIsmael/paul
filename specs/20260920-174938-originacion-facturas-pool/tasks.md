@@ -644,6 +644,28 @@ Soroban):
   `supabase migration repair` o renombrando los archivos locales antes de que alguien corra
   `supabase db push` desde un checkout nuevo.
 
+**T054 (2026-09-22, post-cierre) — Validación de integración end-to-end, bug real encontrado y
+corregido**: una prueba de integración manual contra el proyecto remoto (login → catálogo →
+detalle → facturas anonimizadas → saldo → cotizar/confirmar aporte, verificado además de forma
+independiente contra el contrato con `stellar contract invoke`) encontró que **Retail Norte
+(tramos senior y junior) tenía un desface real**: `supabase/seed/03_originacion_facturas_demo.sql`
+asignó 2 facturas a esos tramos usando hashes de transacción "placeholder" (tal como el propio
+archivo advierte en su comentario), así que `register_invoice` nunca se ejecutó de verdad —
+Postgres mostraba `fracciones_totales` > 0 pero el contrato tenía `cap: 0`, y cualquier aporte
+nuevo fallaba con `CapExceeded` (revertido correctamente, sin pérdida de fondos). **Corregido**:
+se llamó `register_invoice` manualmente para las 2 facturas reales de ese pool
+(`new_cap` 160 y 200 para el tramo senior, 75 para el junior) — verificado con un aporte real
+posterior (`ok: true`, `total_supply` pasó de 0 a 1, confirmado en Horizon). Detalle completo,
+hashes exactos y comandos en `research.md` §9.
+
+**Importante — no es un bug generalizado**: de los 6 pools de ejemplo, solo Retail Norte tenía
+este desface. Manufactura Sur ya funcionaba (tuvo una asignación real desde el principio).
+**Servicios Lima, Construcción Centro, Comercio y Tecnología Mixto y Tecnología Exportadora (4
+pools, 8 tramos) siguen sin poder recibir un aporte nuevo hoy** — pero esto no es un error a
+corregir: simplemente nunca se les asignó ninguna factura real por la vía correcta todavía (mismo
+camino que ya funcionó una vez en Manufactura Sur). Cuando alguien lo haga, van a funcionar sin
+necesitar ningún parche.
+
 ## Notes
 
 - [P] = archivos distintos, sin dependencias pendientes entre sí.

@@ -253,3 +253,64 @@ automática de distribución de pérdidas/proceeds entre tramos al momento de co
 la elección manual de qué tramo respalda cada factura en el momento de originación) — es
 consistente con el tema transversal de la spec de que toda asignación es manual y explícita del
 operador, nunca calculada.
+
+## 9. Hallazgo de integración post-implementación (2026-09-22): desface entre `fracciones_totales`
+   (Postgres) y `cap`/`total_supply` (contrato real) en la mayoría de los tramos ya sembrados
+
+Validación de integración end-to-end contra el proyecto remoto real (login → catálogo → detalle →
+facturas anonimizadas → saldo → cotizar/confirmar aporte → verificación directa del contrato con
+`stellar contract invoke`, sin pasar por el backend de Paul). Se reprodujo dos veces un aporte real
+fallando en el paso de `mint` (`PA019`, con reembolso automático correcto) sobre el tramo senior de
+"Retail Norte" — el mecanismo de reversión funciona bien, pero ningún aporte nuevo puede
+completarse hoy en la mayoría de los pools.
+
+**Causa raíz confirmada** (no es un bug del contrato ni de `confirmar-aporte`, es un dato de
+seed): `supabase/seed/03_originacion_facturas_demo.sql` asigna facturas a pools usando hashes de
+transacción "placeholder" (`SEED_TX_HASH_101`, `SEED_TX_HASH_102`, y una asignación de prueba con
+`TEST_TX_HASH_PLACEHOLDER`) — el propio archivo lo advierte en su comentario, pero el efecto no se
+había verificado contra el contrato real hasta ahora: `register_invoice` nunca se ejecutó de
+verdad para esas facturas, así que el `cap` on-chain de esos tramos quedó en `0` aunque Postgres
+muestra `fracciones_totales` > 0.
+
+**Estado real verificado, tramo por tramo, contra Stellar testnet** (de las 4 facturas en todo el
+sistema con `huella_hash` real — el resto de facturas "asignadas" son de antes de esta feature, sin
+hash, y no requieren `register_invoice`):
+
+| Pool / tramo | Facturas reales asignadas | `cap` on-chain verificado | ¿Aporte nuevo funciona hoy? |
+|---|---|---|---|
+| Manufactura Sur, senior (`c...201`, contrato `CCGH3FI2775BI2KPA5HDTTRBSTSACE2X2H4ZJJ56NWGUBWQ2NWFGQBWO`) | `e...104` (anticipo 3200, `onchain_tx_hash` real) | `312` ✅ (= `fracciones_totales`), `total_supply=1` | **Sí** |
+| Retail Norte, senior (`c...101`, contrato `CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE`) | `e...101` (2000, placeholder), `a3094fa2...` (4050, placeholder) | `0` ❌ (Postgres dice 200) | No, hasta corregir |
+| Retail Norte, junior (`c...102`, contrato `CAGPMH4CXI5L65VQXKPU3YQQLDEDFHOHX34CZZW2D6OS7HZ77WG5NZEN`) | `e...102` (1500, placeholder) | `0` ❌ (Postgres dice 75) | No, hasta corregir |
+| Servicios Lima, Construcción Centro, Comercio y Tecnología Mixto, Tecnología Exportadora (8 tramos restantes) | Ninguna | `0` (no verificado en todos, inferido — Servicios Lima senior confirmado `0`) | No — no es un bug, nunca se les asignó una factura real todavía |
+
+**Corrección pendiente para Retail Norte** (no ejecutada — requiere firmar con la llave de
+autoridad del operador, que el entorno de esta sesión bloqueó materializar por seguridad;
+pendiente de que alguien con el toolchain propio la corra):
+
+```bash
+stellar contract invoke --id CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE \
+  --source-account <ADMIN_SECRET> --network testnet -- \
+  register_invoice --invoice_hash f1323e8ef73b9e6cd9995ab06d059fe1b29804d808a6b7fc3c1cf4f55b689690 --new_cap 160
+
+stellar contract invoke --id CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE \
+  --source-account <ADMIN_SECRET> --network testnet -- \
+  register_invoice --invoice_hash 2c5f384fe614e5d2e436ed5ec218ce3f557e45007edb64440bae777aa6cf4314 --new_cap 200
+
+stellar contract invoke --id CAGPMH4CXI5L65VQXKPU3YQQLDEDFHOHX34CZZW2D6OS7HZ77WG5NZEN \
+  --source-account <ADMIN_SECRET> --network testnet -- \
+  register_invoice --invoice_hash 1758dda37425f92a11072e8bfac80793ebcb1fc5c13f71452b56aa73b633ea4c --new_cap 75
+```
+
+Los `new_cap` se derivaron de `fracciones_totales` actual de cada tramo (destino final) y de
+`floor(anticipo acumulado / unidad_minima_aporte)` (incremento por factura), verificado contra el
+mismo patrón que sí funcionó en Manufactura Sur.
+
+**Para el resto de pools** (Servicios Lima, Construcción Centro, Comercio y Tecnología Mixto,
+Tecnología Exportadora): no es un "arreglo retroactivo" posible — nunca se les asignó una factura
+real por la vía nueva. Para que acepten un aporte nuevo que tokenice de verdad, hace falta
+`registrar_factura` + `asignar_factura_a_pool` sobre una factura real para esos tramos primero
+(mismo flujo que ya funcionó una vez en Manufactura Sur con `e...104`).
+
+**Recomendación para la demo/checkpoint**: usar **Manufactura Sur (tramo senior)** como el pool
+para cualquier demo en vivo de un aporte — es el único que hoy tokeniza de verdad sin necesitar
+ninguna corrección previa.
