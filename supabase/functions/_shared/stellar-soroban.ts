@@ -19,7 +19,23 @@
 //    duplicadas reales con `mint`, que no tiene esa protección). Corregido subiendo a
 //    `@stellar/stellar-sdk@^17`, que sí interpreta correctamente el protocolo actual — verificado
 //    contra la transacción real de este mismo hallazgo antes de desplegar la corrección.
+//
+// Verificado en vivo contra testnet (validación de quickstart.md §8, concurrencia): un tercer bug
+// real, más serio. Dos invocaciones concurrentes de `invocarContratoAdmin` firman con la MISMA
+// cuenta `operador_authority` (compartida por toda la plataforma) — Stellar solo admite una
+// transacción "en vuelo" por número de secuencia de cuenta, así que la segunda choca y falla.
+// Reproducido con 3 aportes confirmándose en paralelo sobre el mismo tramo: las 3 invocaciones de
+// `mint` chocaron entre sí, y el mismo problema alcanzó a la compensación (dos reembolsos del
+// mismo pool firman con su misma cuenta de custodia) — un aporte quedó con el pago XLM ya hecho
+// pero sin fracciones ni reembolso hasta reconciliarlo a mano. Corregido con un lock de
+// aplicación por cuenta firmante respaldado en Postgres (`_shared/lock-firma.ts`,
+// 0016_lock_firma_stellar.sql) que serializa el tramo cargar-secuencia -> firmar -> someter de
+// cualquier cuenta Stellar compartida entre invocaciones concurrentes — necesario porque las Edge
+// Functions no comparten memoria entre sí (un mutex en proceso no sirve). Verificado repitiendo
+// la misma ráfaga de 6 aportes concurrentes tras la corrección: las 3 reservas válidas mintean
+// sin colisión, y las 3 rechazadas por cupo fallan limpiamente sin tocar la red Stellar.
 
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
   Address,
   Contract,
@@ -30,6 +46,7 @@ import {
   rpc,
   scValToNative,
 } from "npm:@stellar/stellar-sdk@^17";
+import { conLockFirma } from "./lock-firma.ts";
 
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const POLL_INTERVAL_MS = 2_000;
@@ -95,62 +112,69 @@ function argToScVal(arg: ArgSpec) {
  * §2) o compensar.
  */
 export async function invocarContratoAdmin(
+  supabase: SupabaseClient,
   secretoAdmin: string,
   contractId: string,
   metodo: string,
   args: ArgSpec[],
 ): Promise<{ hash: string; valorRetorno: unknown }> {
   const keypair = Keypair.fromSecret(secretoAdmin);
-  const cuenta = await conTimeout(
-    server.getAccount(keypair.publicKey()),
-    "timeout_soroban_get_account",
-    POLL_TIMEOUT_MS,
-  );
 
-  const contrato = new Contract(contractId);
-  const operacion = contrato.call(metodo, ...args.map(argToScVal));
+  // `operador_authority` es UNA sola cuenta compartida por toda la plataforma para firmar
+  // register_invoice/mint — dos invocaciones concurrentes (p. ej. dos aportes confirmándose a la
+  // vez) chocan por número de secuencia si no se serializan (quickstart.md §8, 0016).
+  return await conLockFirma(supabase, keypair.publicKey(), async () => {
+    const cuenta = await conTimeout(
+      server.getAccount(keypair.publicKey()),
+      "timeout_soroban_get_account",
+      POLL_TIMEOUT_MS,
+    );
 
-  let transaccion = new TransactionBuilder(cuenta, {
-    fee: "1000000", // fee máximo dispuesto a pagar; prepareTransaction lo ajusta al costo real.
-    networkPassphrase: Networks.TESTNET,
-  })
-    .addOperation(operacion)
-    .setTimeout(60)
-    .build();
+    const contrato = new Contract(contractId);
+    const operacion = contrato.call(metodo, ...args.map(argToScVal));
 
-  transaccion = await conTimeout(
-    server.prepareTransaction(transaccion) as unknown as Promise<typeof transaccion>,
-    "timeout_soroban_prepare",
-    POLL_TIMEOUT_MS,
-  );
+    let transaccion = new TransactionBuilder(cuenta, {
+      fee: "1000000", // fee máximo dispuesto a pagar; prepareTransaction lo ajusta al costo real.
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(operacion)
+      .setTimeout(60)
+      .build();
 
-  transaccion.sign(keypair);
+    transaccion = await conTimeout(
+      server.prepareTransaction(transaccion) as unknown as Promise<typeof transaccion>,
+      "timeout_soroban_prepare",
+      POLL_TIMEOUT_MS,
+    );
 
-  const envio = await conTimeout(
-    server.sendTransaction(transaccion),
-    "timeout_soroban_send",
-    POLL_TIMEOUT_MS,
-  );
+    transaccion.sign(keypair);
 
-  if (envio.status === "ERROR") {
-    throw new Error(`soroban_send_error: ${JSON.stringify(envio.errorResult)}`);
-  }
+    const envio = await conTimeout(
+      server.sendTransaction(transaccion),
+      "timeout_soroban_send",
+      POLL_TIMEOUT_MS,
+    );
 
-  const hash = envio.hash;
-  const inicio = Date.now();
-  while (Date.now() - inicio < CONFIRMATION_TIMEOUT_MS) {
-    const resultado = await server.getTransaction(hash);
-    if (resultado.status === rpc.Api.GetTransactionStatus.SUCCESS) {
-      const valorRetorno = resultado.returnValue ? scValToNative(resultado.returnValue) : null;
-      return { hash, valorRetorno };
+    if (envio.status === "ERROR") {
+      throw new Error(`soroban_send_error: ${JSON.stringify(envio.errorResult)}`);
     }
-    if (resultado.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`soroban_tx_failed: ${JSON.stringify(resultado.resultXdr)}`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-  }
 
-  throw new Error("timeout_soroban_confirmacion");
+    const hash = envio.hash;
+    const inicio = Date.now();
+    while (Date.now() - inicio < CONFIRMATION_TIMEOUT_MS) {
+      const resultado = await server.getTransaction(hash);
+      if (resultado.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+        const valorRetorno = resultado.returnValue ? scValToNative(resultado.returnValue) : null;
+        return { hash, valorRetorno };
+      }
+      if (resultado.status === rpc.Api.GetTransactionStatus.FAILED) {
+        throw new Error(`soroban_tx_failed: ${JSON.stringify(resultado.resultXdr)}`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+
+    throw new Error("timeout_soroban_confirmacion");
+  });
 }
 
 /**
@@ -158,6 +182,7 @@ export async function invocarContratoAdmin(
  * cubre el caso común de un timeout transitorio de Soroban RPC (research.md §2).
  */
 export async function invocarContratoAdminConReintentos(
+  supabase: SupabaseClient,
   secretoAdmin: string,
   contractId: string,
   metodo: string,
@@ -167,7 +192,7 @@ export async function invocarContratoAdminConReintentos(
   let ultimoError: unknown;
   for (let intento = 1; intento <= intentos; intento++) {
     try {
-      return await invocarContratoAdmin(secretoAdmin, contractId, metodo, args);
+      return await invocarContratoAdmin(supabase, secretoAdmin, contractId, metodo, args);
     } catch (err) {
       ultimoError = err;
       if (intento < intentos) {

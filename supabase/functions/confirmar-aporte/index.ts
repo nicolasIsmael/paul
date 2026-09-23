@@ -12,6 +12,14 @@
 //
 // El paso de mint comparte `_shared/stellar-soroban.ts` con `asignar-factura`, verificado en vivo
 // contra testnet (T050) — mismo helper, mismas correcciones (ver ese archivo).
+//
+// Verificado en vivo contra testnet (validación de quickstart.md §8, concurrencia): tanto el pago
+// (`pagarXlm`) como el mint (`invocarContratoAdminConReintentos`) ahora exigen `supabaseService`
+// y sostienen `_shared/lock-firma.ts` mientras firman — dos aportes confirmándose en paralelo
+// firman con la MISMA cuenta compartida (operador_authority para el mint; la custodia del pool
+// para el reembolso de compensación) y chocaban por número de secuencia de cuenta sin este lock,
+// dejando en un caso real un aporte con el pago ya hecho pero sin fracciones ni reembolso hasta
+// reconciliarlo a mano (ver 0016_lock_firma_stellar.sql).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -237,7 +245,7 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-      const { hash } = await pagarXlm(secretoWallet, pool.custody_public_key, montoXlm);
+      const { hash } = await pagarXlm(supabaseService, secretoWallet, pool.custody_public_key, montoXlm);
       // Se guarda el hash de inmediato (vía confirmar_aporte con simulado=false lo dejaría en
       // 'confirmado' antes de mintear — en su lugar se registra el pago crudo con un UPDATE
       // directo, y confirmar_aporte se reserva para el final, tras el mint).
@@ -280,6 +288,7 @@ Deno.serve(async (req: Request) => {
 
     try {
       const { hash: fraccionHash } = await invocarContratoAdminConReintentos(
+        supabaseService,
         secretoAdmin,
         tramo.token_contract_id,
         "mint",
@@ -356,7 +365,7 @@ async function compensarYResponder(
   }
 
   try {
-    const { hash: reembolsoHash } = await pagarXlm(secretoCustodia, investorPublicKey, montoXlm);
+    const { hash: reembolsoHash } = await pagarXlm(supabaseService, secretoCustodia, investorPublicKey, montoXlm);
     await supabaseService.rpc("revertir_aporte", { p_aporte_id: aporteId, p_motivo: motivo });
     return respuestaError(
       {

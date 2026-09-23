@@ -119,6 +119,7 @@ Deno.serve(async (req: Request) => {
   // Paso 3: register_invoice en el contrato, con reintentos acotados (research.md §2).
   try {
     const { hash } = await invocarContratoAdminConReintentos(
+      supabaseService,
       secretoAdmin,
       tramo.token_contract_id,
       "register_invoice",

@@ -180,6 +180,27 @@ Piezas clave:
        correspondiente ya se había reembolsado automáticamente. Corregido subiendo a
        `@stellar/stellar-sdk@^17` en los 3 archivos que lo usan, verificado con una repetición
        limpia del mismo aporte (evidencia de arriba).
+    3. **Crítico, encontrado al validar `quickstart.md` §8 (concurrencia) escenario por
+       escenario**: dos `confirmar-aporte` concurrentes sobre el mismo tramo invocan `mint`
+       firmando con la MISMA cuenta `operador_authority` (compartida por toda la plataforma) —
+       Stellar solo admite una transacción "en vuelo" por número de secuencia de cuenta, así que
+       la segunda choca y falla. El mismo problema alcanzaba a la compensación automática (dos
+       reembolsos del mismo pool firman con su misma cuenta de custodia). Reproducido en vivo: de
+       3 reservas válidas sobre el mismo tramo (cupo ajustado a propósito para forzar la
+       colisión), las 3 invocaciones de `mint` chocaron entre sí y 2 de los 3 reembolsos de
+       compensación TAMBIÉN chocaron entre sí, dejando un aporte con el pago XLM ya hecho pero sin
+       fracciones ni reembolso (violación real de la garantía "nunca queda pendiente") —
+       reconciliado a mano (reembolso manual verificable en
+       [`bf2701624b379eb992a48aeb6e410a73a9a5c39c8437baacaef42e5325acb4a7`](https://stellar.expert/explorer/testnet/tx/bf2701624b379eb992a48aeb6e410a73a9a5c39c8437baacaef42e5325acb4a7)).
+       Corregido con un lock de aplicación por cuenta firmante respaldado en Postgres
+       (`supabase/functions/_shared/lock-firma.ts`,
+       `supabase/migrations/0016_lock_firma_stellar.sql`) que serializa el tramo
+       cargar-secuencia→firmar→someter de cualquier cuenta Stellar compartida entre invocaciones
+       concurrentes de Edge Functions (que no comparten memoria entre sí). Verificado repitiendo
+       la misma ráfaga de 6 aportes concurrentes tras el fix: las 3 reservas válidas mintearon sin
+       colisión (3 `tx_hash`/`fraccion_tx_hash` distintos,
+       [`total_supply()` +3 exacto](https://stellar.expert/explorer/testnet/contract/CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE)),
+       y las 3 rechazadas por cupo fallaron limpiamente sin tocar la red Stellar.
 
 ## Cuentas de demostración
 

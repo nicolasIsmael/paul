@@ -636,9 +636,9 @@ Soroban):
   (por cualquier otra causa futura), volvería a emitir de más. Una corrección de fondo exigiría
   que el contrato acepte una clave de idempotencia por mint (similar a `Factura(hash)`), lo que
   implica recompilar y redesplegar las 12 instancias — fuera de alcance de esta sesión.
-- **T043/T052, §8 (20 aportes simultáneos)**: no ejecutado. La garantía de cupo bajo concurrencia
-  ya está probada a nivel Postgres por la spec anterior (`reservar_aporte`); falta la variante
-  con el contrato real de por medio.
+- ~~**T043/T052, §8 (20 aportes simultáneos)**: no ejecutado.~~ **Resuelto el 2026-09-23, ver
+  T055 abajo** — sí se ejecutó (a menor escala, 6 aportes concurrentes con cupo ajustado a
+  propósito) y encontró un bug real de concurrencia en la capa on-chain, ya corregido.
 - **T053**: el versionado local (`0010`-`0015`) no coincide con los nombres de versión con
   timestamp que `apply_migration` asignó en el historial remoto — reconciliar con
   `supabase migration repair` o renombrando los archivos locales antes de que alguien corra
@@ -665,6 +665,37 @@ pools, 8 tramos) siguen sin poder recibir un aporte nuevo hoy** — pero esto no
 corregir: simplemente nunca se les asignó ninguna factura real por la vía correcta todavía (mismo
 camino que ya funcionó una vez en Manufactura Sur). Cuando alguien lo haga, van a funcionar sin
 necesitar ningún parche.
+
+**T055 (2026-09-23) — Validación completa de `quickstart.md` escenario por escenario contra el
+proyecto remoto, un bug real de concurrencia encontrado y corregido**: se ejecutaron en vivo los
+12 escenarios del quickstart (registro/rechazo/duplicado de factura, rechazo por rol, asignación
+con evidencia on-chain, asignación duplicada/cruzada, anticipo inválido, facturas anonimizadas +
+RLS deny-all, aporte con fracciones verificables, concurrencia, fallo del contrato con reversión,
+idempotencia del mint, seed de demostración, checklist pre-remoto). Los 11 primeros pasaron sin
+cambios de código. **El de concurrencia (§8) encontró un bug real, no cosmético**: al forzar una
+ráfaga de 6 `confirmar-aporte` concurrentes sobre el mismo tramo (cupo ajustado a propósito para
+que solo 3 pudieran reservar), las 3 invocaciones de `mint` —todas firmadas con la MISMA cuenta
+`operador_authority` compartida por la plataforma— chocaron entre sí por número de secuencia de
+cuenta Stellar, y el mismo problema alcanzó a la compensación automática (reembolsos del mismo
+pool firmando con la misma cuenta de custodia): 2 de los 3 reembolsos también chocaron, dejando un
+aporte con el pago XLM ya hecho pero sin fracciones ni reembolso — una violación real de la
+garantía "nunca queda pendiente" de `plan.md`. Reconciliado a mano de inmediato (reembolso
+manual verificado en Horizon) antes de corregir la causa raíz.
+
+**Corrección**: un lock de aplicación por cuenta firmante, respaldado en Postgres
+(`supabase/migrations/0016_lock_firma_stellar.sql` +
+`supabase/functions/_shared/lock-firma.ts`), que serializa el tramo
+cargar-secuencia→firmar→someter de cualquier cuenta Stellar compartida (operador_authority para
+`register_invoice`/`mint`/`initialize`; la custodia de cada pool para los reembolsos de
+compensación) entre invocaciones concurrentes de Edge Functions — necesario porque las Edge
+Functions no comparten memoria entre sí, así que un mutex en proceso no habría servido.
+`pagarXlm`/`invocarContratoAdmin`/`invocarContratoAdminConReintentos` ahora exigen un cliente
+Supabase como primer argumento; los 4 call sites (`confirmar-aporte` ×2, `asignar-factura`,
+`provision-pool-tramo-token` ×2) se actualizaron y las 3 Edge Functions se redesplegaron.
+**Verificado repitiendo la misma ráfaga tras el fix**: las 3 reservas válidas mintearon sin
+colisión (3 `tx_hash`/`fraccion_tx_hash` distintos, `total_supply()` +3 exacto) y las 3 rechazadas
+por cupo fallaron limpiamente sin tocar la red Stellar — cero PA013 (reconciliación manual), cero
+colisiones. Detalle completo y hashes en `README.md` → Estado real de esta feature, bug #3.
 
 ## Notes
 

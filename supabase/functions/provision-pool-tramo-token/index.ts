@@ -25,6 +25,7 @@ import {
   xdr,
 } from "npm:@stellar/stellar-sdk@^17";
 import { hexToBytes, invocarContratoAdminConReintentos } from "../_shared/stellar-soroban.ts";
+import { conLockFirma } from "../_shared/lock-firma.ts";
 
 const SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org";
 const server = new rpc.Server(SOROBAN_RPC_URL);
@@ -39,8 +40,19 @@ function respuesta(body: Record<string, unknown>, status: number): Response {
 }
 
 /** Instancia una nueva copia del contrato ya subido (mismo wasm_hash) con una salt aleatoria. */
-async function instanciarContrato(secretoAdmin: string, wasmHash: string): Promise<string> {
+async function instanciarContrato(
+  supabase: SupabaseClient,
+  secretoAdmin: string,
+  wasmHash: string,
+): Promise<string> {
   const keypair = Keypair.fromSecret(secretoAdmin);
+
+  // Misma cuenta operador_authority que register_invoice/mint — serializar contra colisiones de
+  // secuencia si dos tramos se provisionan casi al mismo tiempo (ver _shared/lock-firma.ts).
+  return await conLockFirma(supabase, keypair.publicKey(), () => instanciarContratoSinLock(keypair, wasmHash));
+}
+
+async function instanciarContratoSinLock(keypair: Keypair, wasmHash: string): Promise<string> {
   const cuenta = await server.getAccount(keypair.publicKey());
   const salt = stellarHash(crypto.getRandomValues(new Uint8Array(32)));
 
@@ -128,9 +140,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const contractId = await instanciarContrato(secretoAdmin, config[0].token_wasm_hash);
+    const contractId = await instanciarContrato(supabaseService, secretoAdmin, config[0].token_wasm_hash);
 
-    await invocarContratoAdminConReintentos(secretoAdmin, contractId, "initialize", [
+    await invocarContratoAdminConReintentos(supabaseService, secretoAdmin, contractId, "initialize", [
       { type: "address", value: config[0].operador_authority_public_key },
       { type: "string", value: pool.codigo },
       { type: "symbol", value: tramo.tipo! },
