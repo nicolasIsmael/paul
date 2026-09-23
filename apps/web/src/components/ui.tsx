@@ -111,6 +111,7 @@ export function Modal({
   onClose,
   children,
   dismissible = true,
+  className = "",
 }: {
   open: boolean;
   title: string;
@@ -118,6 +119,7 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
   dismissible?: boolean;
+  className?: string;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -167,7 +169,7 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={() => dismissible && onClose()}>
-      <section ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={modalRef} className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onMouseDown={(event) => event.stopPropagation()}>
         <header className="modal__header">
           <div><h2 id={titleId}>{title}</h2>{description && <p id={descriptionId}>{description}</p>}</div>
           {dismissible && <button className="icon-button" type="button" onClick={onClose} aria-label="Cerrar"><X size={20} /></button>}

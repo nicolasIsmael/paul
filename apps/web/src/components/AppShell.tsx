@@ -17,16 +17,16 @@ import { isPreviewMode } from "../lib/supabase";
 import { Brand } from "./Brand";
 
 const investorNavigation = [
-  { to: "/", label: "Resumen", icon: LayoutDashboard, end: true },
-  { to: "/pools", label: "Oportunidades", icon: PieChart },
-  { to: "/posiciones", label: "Mis posiciones", icon: BriefcaseBusiness },
-  { to: "/perfil", label: "Perfil y wallet", icon: WalletCards },
+  { to: "/", label: "Resumen", mobileLabel: "Resumen", icon: LayoutDashboard, end: true },
+  { to: "/pools", label: "Oportunidades", mobileLabel: "Explorar", icon: PieChart },
+  { to: "/posiciones", label: "Mis posiciones", mobileLabel: "Posiciones", icon: BriefcaseBusiness },
+  { to: "/perfil", label: "Perfil y wallet", mobileLabel: "Perfil", icon: WalletCards },
 ];
 
 const operatorNavigation = [
-  { to: "/", label: "Resumen", icon: LayoutDashboard, end: true },
-  { to: "/pools", label: "Pools", icon: PieChart },
-  { to: "/perfil", label: "Mi perfil", icon: CircleUserRound },
+  { to: "/", label: "Resumen", mobileLabel: "Resumen", icon: LayoutDashboard, end: true },
+  { to: "/pools", label: "Pools", mobileLabel: "Pools", icon: PieChart },
+  { to: "/perfil", label: "Mi perfil", mobileLabel: "Perfil", icon: CircleUserRound },
 ];
 
 export function AppShell() {
@@ -82,6 +82,7 @@ export function AppShell() {
       <main className="main-area">
         <header className="topbar">
           <button className="icon-button topbar__menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menú"><Menu size={21} /></button>
+          <div className="topbar__mobile-brand"><Brand compact /></div>
           <div className="topbar__spacer" />
           <div className="topbar__status"><span className="network-dot" /> {isPreviewMode ? "Vista previa local" : "Testnet conectada"}</div>
           <div className="user-menu" ref={userMenuRef}>
@@ -99,6 +100,14 @@ export function AppShell() {
           </div>
         </header>
         <div className="page-container"><Outlet /></div>
+        <nav className="mobile-navigation" aria-label="Navegación móvil">
+          {navigation.map(({ to, mobileLabel, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end} className={({ isActive }) => `mobile-navigation__link ${isActive ? "mobile-navigation__link--active" : ""}`}>
+              <Icon size={20} strokeWidth={2} />
+              <span>{mobileLabel}</span>
+            </NavLink>
+          ))}
+        </nav>
       </main>
     </div>
   );
