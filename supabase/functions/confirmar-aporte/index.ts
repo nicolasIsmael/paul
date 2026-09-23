@@ -24,7 +24,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { obtenerBalanceXlm, pagarXlm } from "../_shared/stellar-payment.ts";
-import { invocarContratoAdminConReintentos } from "../_shared/stellar-soroban.ts";
+import {
+  consultarSoloLectura,
+  invocarContratoAdminConReintentos,
+} from "../_shared/stellar-soroban.ts";
 
 const RESERVA_MINIMA_XLM = 2;
 
@@ -105,6 +108,39 @@ function respuestaDesdeAporte(aporte: Aporte): Response {
 async function leerAporte(aporteId: string): Promise<Aporte | null> {
   const { data } = await supabaseService.from("aportes").select("*").eq("id", aporteId).single<Aporte>();
   return data ?? null;
+}
+
+async function asegurarCapContrato(
+  secretoAdmin: string,
+  tramoId: string,
+  contractId: string,
+  fraccionesTotales: number,
+): Promise<void> {
+  const leerCap = async () => Number(await consultarSoloLectura(contractId, "cap"));
+  if (await leerCap() >= fraccionesTotales) return;
+
+  const semilla = new TextEncoder().encode(
+    `paul:backfill-cap:${tramoId}:${fraccionesTotales}`,
+  );
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", semilla));
+  const huella = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+  try {
+    await invocarContratoAdminConReintentos(
+      supabaseService,
+      secretoAdmin,
+      contractId,
+      "register_invoice",
+      [
+        { type: "bytes32", value: huella },
+        { type: "i128", value: fraccionesTotales },
+      ],
+    );
+  } catch (error) {
+    // Otra invocacion concurrente pudo sincronizar el mismo contrato mientras esperabamos el
+    // lock de firma. Solo propagar si el cap continua realmente desactualizado.
+    if (await leerCap() < fraccionesTotales) throw error;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -265,7 +301,7 @@ Deno.serve(async (req: Request) => {
   if (!aporte.fraccion_tx_hash) {
     const { data: tramo } = await supabaseService
       .from("tramos")
-      .select("token_contract_id")
+      .select("token_contract_id, fracciones_totales")
       .eq("id", aporte.tramo_id)
       .single();
     const { data: secretoAdmin } = await supabaseService.rpc("obtener_secreto_autoridad_operador", {
@@ -287,6 +323,12 @@ Deno.serve(async (req: Request) => {
     const fracciones = aporte.monto_nominal / pool.unidad_minima_aporte;
 
     try {
+      await asegurarCapContrato(
+        secretoAdmin,
+        aporte.tramo_id,
+        tramo.token_contract_id,
+        Number(tramo.fracciones_totales),
+      );
       const { hash: fraccionHash } = await invocarContratoAdminConReintentos(
         supabaseService,
         secretoAdmin,
@@ -300,6 +342,12 @@ Deno.serve(async (req: Request) => {
       await supabaseService.from("aportes").update({ fraccion_tx_hash: fraccionHash }).eq("id", aporteId);
       aporte = await leerAporte(aporteId) ?? aporte;
     } catch (err) {
+      console.error("Fallo al sincronizar el cap o emitir fracciones", {
+        aporteId,
+        tramoId: aporte.tramo_id,
+        contractId: tramo.token_contract_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return await compensarYResponder(
         aporteId,
         aporte,
