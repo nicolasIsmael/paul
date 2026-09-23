@@ -20,9 +20,9 @@ supabase/
 │   │                                          # (corrige un hallazgo de desarrollo local)
 │   ├── 0005_custodia_pools.sql               # cuenta de custodia Stellar dedicada por pool
 │   ├── 0006_tipo_cambio.sql                  # tipo de cambio de referencia XLM<->soles/dólares
-│   ├── 0007_saldo_demostracion.sql           # saldo de demostración off-chain + recarga
+│   ├── 0007_saldo_demostracion.sql           # saldo contable y límite diario de recarga
 │   ├── 0008_cotizaciones_aportes.sql         # cotizar/reservar/confirmar/revertir aporte, posiciones
-│   └── 0009_catalogo_consultas.sql           # catálogo y detalle de pools
+│   ├── 0009_catalogo_consultas.sql           # catálogo y detalle de pools
 │   ├── 0010_configuracion_red.sql            # tabla de configuración por red Stellar (contrato)
 │   ├── 0011_proveedores_facturas.sql         # proveedores; rename operaciones->facturas + ciclo
 │   │                                          # de vida de originación; columnas nuevas de tramos
@@ -31,7 +31,9 @@ supabase/
 │   ├── 0013_facturas_del_pool_y_detalle.sql  # facturas_del_pool, detalle_pool extendido,
 │   │                                          # actualizar_estado_cobro_factura
 │   ├── 0014_provision_pool_tramo_token.sql   # trigger + Database Webhook por tramo nuevo
-│   └── 0015_mint_fracciones_aporte.sql       # soporte de emisión de fracciones + compensación
+│   ├── 0015_mint_fracciones_aporte.sql       # soporte de emisión de fracciones + compensación
+│   ├── 0016_lock_firma_stellar.sql           # serialización distribuida por cuenta firmante
+│   └── 0017_recargas_stellar.sql             # recarga idempotente con pago XLM en Testnet
 ├── functions/
 │   ├── _shared/
 │   │   ├── stellar-keypair.ts                # generar + fondear + custodiar un keypair Stellar
@@ -41,7 +43,8 @@ supabase/
 │   ├── provision-pool-custody/               # Edge Function: cuenta de custodia de cada pool
 │   ├── provision-pool-tramo-token/           # Edge Function: instancia el contrato de un tramo
 │   ├── confirmar-aporte/                     # Edge Function: reserva -> pago -> mint -> confirmación
-│   └── asignar-factura/                      # Edge Function: asigna una factura -> contrato
+│   ├── asignar-factura/                      # Edge Function: asigna una factura -> contrato
+│   └── recargar-wallet/                      # Edge Function: envía XLM y acredita saldo demo
 └── seed/
     ├── 00_auth_demo_local.sql                # SOLO LOCAL — cuentas demo en auth.users
     ├── 01_dominio_demo.sql                   # pools, tramos, empresas, operaciones, tipo de cambio
@@ -84,8 +87,8 @@ Piezas clave:
 
 ### Módulo de pools y primer aporte ([specs/20260920-113925-inversion-pools-aporte/](specs/20260920-113925-inversion-pools-aporte/))
 
-El inversionista recarga saldo de demostración (crédito off-chain en soles/dólares, nunca en
-XLM), explora y compara pools de inversión fraccionada sobre facturas de confirming, ve el
+El inversionista recarga saldo de demostración y recibe el equivalente en XLM Testnet en su
+wallet, explora y compara pools de inversión fraccionada sobre facturas de confirming, ve el
 detalle de un pool (composición agregada, rendimiento ilustrativo y colchón de pérdida por
 tramo), cotiza y confirma un aporte a un tramo (senior o junior), y consulta sus posiciones.
 Exclusivamente backend — ver `specs/20260920-113925-inversion-pools-aporte/contracts/` para el
@@ -103,9 +106,10 @@ Piezas clave:
   de un pool sea directamente el balance de su cuenta en Horizon, sin lógica de memos, y para que
   la custodia pueda migrar a un contrato Soroban más adelante cambiando solo un valor, no el
   contrato de API.
-- **Saldo de demostración** (`saldos_demostracion`, `recargas_saldo`): crédito off-chain con tope
-  de S/1000 (o equivalente en USD) por día natural en hora de Lima, compartido entre monedas y
-  seguro ante recargas simultáneas (`pg_advisory_xact_lock`).
+- **Saldo y recarga** (`saldos_demostracion`, `recargas_saldo`): crédito contable con tope de
+  S/1000 (o equivalente en USD) por día natural en hora de Lima, acompañado por un pago real en
+  XLM Testnet. La Edge Function persiste el hash antes del envío para admitir reintentos sin pagos
+  duplicados; la tesorería de demo se custodia en Supabase Vault.
 - **Aporte** (`cotizaciones`, `aportes`): ciclo `reservado -> confirmado | revertido`. El cupo de
   un tramo se compromete de forma atómica (`UPDATE` condicional de una sola sentencia) en el
   momento de la reserva, nunca al confirmar — así ningún aporte concurrente puede sobrevender un

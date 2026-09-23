@@ -94,8 +94,8 @@ con los datos cargados, sin necesidad de que el usuario llegue a aportar.
 
 Un inversionista quiere tener saldo disponible para poder aportar. Consulta su saldo de
 demostración vigente en soles y/o en dólares, y puede recargarlo dentro de un tope diario, de
-forma que quede disponible de inmediato para invertir. La recarga es un crédito interno de la
-plataforma: no mueve XLM en la red, solo acredita el saldo de demostración.
+forma que quede disponible de inmediato para invertir. Cada recarga acredita el saldo contable y
+envía su equivalente en XLM Testnet a la wallet del inversionista.
 
 **Why this priority**: Es requisito previo indispensable para poder completar un aporte (Historia
 4); sin saldo visible y recargable, el inversionista no puede llegar a su primera inversión
@@ -112,8 +112,8 @@ disponible, sin necesidad de que el usuario explore pools ni aporte.
    dólares).
 2. **Given** un inversionista autenticado, **When** solicita una recarga de saldo de demostración
    en soles o en dólares dentro del tope diario permitido, **Then** el saldo de demostración se
-   actualiza de inmediato sin que se mueva ningún XLM en la red, y la recarga queda registrada con
-   su monto, moneda, tipo de cambio aplicado y fecha.
+   actualiza después de que se envía el equivalente en XLM Testnet, y la recarga queda registrada
+   con su monto, moneda, tipo de cambio aplicado, hash y fecha.
 3. **Given** un inversionista que ya alcanzó el tope de recarga del día natural (hora de Lima),
    **When** intenta recargar de nuevo, **Then** el sistema rechaza la recarga e informa cuánto
    puede recargar todavía ese día y cuándo se reinicia el conteo (00:00 hora de Lima).
@@ -262,8 +262,8 @@ cuenta.
 - **FR-002**: El sistema MUST mostrar al inversionista su saldo de demostración vigente en cada
   moneda en la que tenga saldo.
 - **FR-003**: El sistema MUST permitir al inversionista recargar su saldo de demostración en soles
-  o en dólares sin que la recarga mueva XLM en la red: la recarga únicamente acredita el saldo de
-  demostración.
+  o en dólares y MUST enviar el equivalente calculado en XLM Testnet a su wallet antes de acreditar
+  el saldo contable.
 - **FR-004**: El sistema MUST limitar el total recargado por un inversionista a un máximo
   acumulado de S/1000 (o su equivalente en dólares al tipo de cambio de referencia vigente) por
   día natural en hora de Lima, reiniciando el conteo a las 00:00 hora de Lima.
@@ -271,8 +271,8 @@ cuenta.
   (hora de Lima), exceda el tope vigente, informando cuánto puede recargar todavía ese día y
   cuándo se reinicia el conteo.
 - **FR-006**: Al confirmar una recarga, el sistema MUST registrar su monto, su moneda, el tipo de
-  cambio de referencia aplicado (para el cómputo del tope diario compartido entre monedas) y su
-  fecha.
+  cambio de referencia aplicado, los XLM enviados, el hash verificable y su fecha; los reintentos
+  con la misma clave idempotente MUST NOT duplicar el pago.
 - **FR-007**: El sistema MUST impedir que un inversionista cuya billetera aún se está creando
   recargue saldo de demostración, y MUST informarle que puede seguir explorando pools mientras
   tanto.

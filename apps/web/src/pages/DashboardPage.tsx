@@ -3,19 +3,21 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   Copy,
+  ExternalLink,
   Plus,
   RefreshCw,
   Sparkles,
   Wallet,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PoolCard } from "../components/PoolCard";
 import { Badge, Button, CardGridSkeleton, EmptyState, ErrorState, Modal, Notice, Panel, Skeleton } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { normalizeError } from "../lib/errors";
-import { copyText, dateTime, money, shortKey } from "../lib/format";
+import { copyText, dateTime, money, number, shortKey } from "../lib/format";
 import type { ApiErrorShape, Balance, Currency, Pool, Position, TopUpResult } from "../types/domain";
 
 const defaultFilters = {
@@ -28,7 +30,7 @@ const defaultFilters = {
 };
 
 export function DashboardPage() {
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const isInvestor = profile?.rol === "inversionista";
   const [pools, setPools] = useState<Pool[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -39,6 +41,8 @@ export function DashboardPage() {
   const [status, setStatus] = useState("");
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [stellarBalance, setStellarBalance] = useState<number | null>(null);
+  const walletPublicKey = profile?.wallet_public_key ?? null;
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -46,12 +50,20 @@ export function DashboardPage() {
     setError("");
     setStatus("");
     try {
-      const requests: [Promise<Pool[]>, Promise<Balance[]>?, Promise<Position[]>?] = [api.pools(defaultFilters)];
-      if (isInvestor) requests.push(api.balances(), api.positions());
-      const [nextPools, nextBalances = [], nextPositions = []] = await Promise.all(requests);
-      setPools(nextPools);
-      setBalances(nextBalances);
-      setPositions(nextPositions);
+      if (isInvestor) {
+        const [nextPools, nextBalances, nextPositions, nextStellarBalance] = await Promise.all([
+          api.pools(defaultFilters),
+          api.balances(),
+          api.positions(),
+          api.stellarBalance(walletPublicKey),
+        ]);
+        setPools(nextPools);
+        setBalances(nextBalances);
+        setPositions(nextPositions);
+        setStellarBalance(nextStellarBalance);
+      } else {
+        setPools(await api.pools(defaultFilters));
+      }
       if (manual) setStatus("Resumen actualizado con los datos más recientes.");
     } catch (cause) {
       setError(normalizeError(cause).message);
@@ -59,7 +71,7 @@ export function DashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isInvestor]);
+  }, [isInvestor, walletPublicKey]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -114,7 +126,9 @@ export function DashboardPage() {
             <Panel className="wallet-panel">
               <div className="panel-heading"><div><span className="panel-icon panel-icon--blue"><Wallet size={20} /></span><div><p>Wallet Stellar</p><small>Custodiada por PAUL</small></div></div><Badge tone={profile?.wallet_public_key ? "success" : "warning"}>{profile?.wallet_public_key ? "Activa" : "Preparando"}</Badge></div>
               <div className="wallet-address"><span>{shortKey(profile?.wallet_public_key || null)}</span><button className="icon-button" onClick={() => void copyWallet()} disabled={!profile?.wallet_public_key} aria-label="Copiar dirección">{copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}</button></div>
+              <div className="wallet-balance"><span>Saldo real Testnet</span><strong>{stellarBalance === null ? "No disponible" : `${number(stellarBalance, 4)} XLM`}</strong></div>
               <div className="wallet-network"><span className="network-dot" /><span>Stellar Testnet</span><small>Las llaves privadas nunca salen del backend</small></div>
+              {profile?.wallet_public_key && <a className="wallet-explorer-link" href={`https://stellar.expert/explorer/testnet/account/${profile.wallet_public_key}?filter=all`} target="_blank" rel="noreferrer">Ver actividad en Stellar Expert <ExternalLink size={14} /></a>}
             </Panel>
           </section>
         </>
@@ -125,26 +139,33 @@ export function DashboardPage() {
         {pools.length ? <div className="pool-grid">{pools.slice(0, 3).map((pool) => <PoolCard key={pool.id} pool={pool} />)}</div> : <EmptyState title="No hay pools abiertos" description="Vuelve más tarde para explorar nuevas oportunidades." />}
       </section>
 
-      <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} onSuccess={() => void load(true)} />
+      <TopUpModal open={topUpOpen} session={session} onClose={() => setTopUpOpen(false)} onSuccess={(result) => { setStellarBalance(result.balance_xlm); void load(true); }} />
     </div>
   );
 }
 
-function TopUpModal({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+function TopUpModal({ open, session, onClose, onSuccess }: { open: boolean; session: Session | null; onClose: () => void; onSuccess: (result: TopUpResult) => void }) {
   const [currency, setCurrency] = useState<Currency>("PEN");
   const [amount, setAmount] = useState("200");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiErrorShape | null>(null);
   const [result, setResult] = useState<TopUpResult | null>(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
+
+  function beginNewIntent() {
+    idempotencyKey.current = crypto.randomUUID();
+    setError(null);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const nextResult = await api.topUp(currency, Number(amount));
+      if (!session) throw { code: "PA008", message: "Tu sesión expiró. Inicia sesión nuevamente." };
+      const nextResult = await api.topUp(session, currency, Number(amount), idempotencyKey.current);
       setResult(nextResult);
-      onSuccess();
+      onSuccess(nextResult);
     } catch (cause) {
       setError(normalizeError(cause));
     } finally {
@@ -155,19 +176,20 @@ function TopUpModal({ open, onClose, onSuccess }: { open: boolean; onClose: () =
   function close() {
     setResult(null);
     setError(null);
+    idempotencyKey.current = crypto.randomUUID();
     onClose();
   }
 
   return (
-    <Modal open={open} title={result ? "Recarga completada" : "Recargar saldo demo"} description={result ? "Tu saldo ya fue actualizado." : "Añade crédito contable para probar tus aportes."} onClose={close} dismissible={!busy}>
+    <Modal open={open} title={result ? "Recarga exitosa" : "Recargar saldo demo"} description={result ? "El XLM ya llegó a tu wallet de Stellar Testnet." : "Recibe XLM de prueba y el crédito equivalente para realizar aportes."} onClose={close} dismissible={!busy}>
       {result ? (
-        <div className="success-block"><span><CheckCircle2 size={28} /></span><h3>{money(result.saldo_actualizado, result.moneda)}</h3><p>Nuevo saldo disponible</p><div className="result-row"><span>Disponible para recargar hoy</span><strong>{money(result.disponible_para_recargar_hoy, "PEN")}</strong></div><div className="result-row"><span>El límite se reinicia</span><strong>{dateTime(result.se_reinicia_at)}</strong></div><Button onClick={close}>Listo</Button></div>
+        <div className="success-block"><span><CheckCircle2 size={28} /></span><h3>{number(result.monto_xlm, 4)} XLM</h3><p>{result.simulado ? "Recarga simulada en la vista previa" : "Recibidos en tu wallet de Testnet"}</p><div className="result-row"><span>Saldo XLM actual</span><strong>{result.balance_xlm === null ? "Consultando" : `${number(result.balance_xlm, 4)} XLM`}</strong></div><div className="result-row"><span>Saldo demo en {result.moneda}</span><strong>{money(result.saldo_actualizado, result.moneda)}</strong></div><div className="result-row"><span>Disponible para recargar hoy</span><strong>{money(result.disponible_para_recargar_hoy, "PEN")}</strong></div><div className="result-row"><span>El límite se reinicia</span><strong>{dateTime(result.se_reinicia_at)}</strong></div>{result.tx_hash && !result.simulado && <a className="stellar-link" href={`https://stellar.expert/explorer/testnet/tx/${result.tx_hash}`} target="_blank" rel="noreferrer">Ver transacción en Stellar Expert <ExternalLink size={16} /></a>}<Button onClick={close}>Listo</Button></div>
       ) : (
         <form className="modal-form" onSubmit={submit}>
-          <div className="segmented-control"><button type="button" className={currency === "PEN" ? "active" : ""} onClick={() => setCurrency("PEN")}>Soles</button><button type="button" className={currency === "USD" ? "active" : ""} onClick={() => setCurrency("USD")}>Dólares</button></div>
-          <label className="field"><span>Monto a recargar</span><div className="amount-input"><span>{currency === "PEN" ? "S/" : "US$"}</span><input data-modal-autofocus type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required /></div></label>
-          <div className="quick-amounts">{[100, 200, 500].map((value) => <button type="button" key={value} onClick={() => setAmount(String(value))}>+ {value}</button>)}</div>
-          <p className="form-help">Tope diario compartido: S/1,000 o equivalente. Esta recarga no mueve XLM.</p>
+          <div className="segmented-control"><button type="button" className={currency === "PEN" ? "active" : ""} disabled={busy} onClick={() => { setCurrency("PEN"); beginNewIntent(); }}>Soles</button><button type="button" className={currency === "USD" ? "active" : ""} disabled={busy} onClick={() => { setCurrency("USD"); beginNewIntent(); }}>Dólares</button></div>
+          <label className="field"><span>Monto a recargar</span><div className="amount-input"><span>{currency === "PEN" ? "S/" : "US$"}</span><input data-modal-autofocus type="number" min="1" step="1" value={amount} disabled={busy} onChange={(event) => { setAmount(event.target.value); beginNewIntent(); }} required /></div></label>
+          <div className="quick-amounts">{[100, 200, 500].map((value) => <button type="button" key={value} disabled={busy} onClick={() => { setAmount(String(value)); beginNewIntent(); }}>+ {value}</button>)}</div>
+          <p className="form-help">Tope diario compartido: S/1,000 o equivalente. El XLM se enviará a tu wallet en Stellar Testnet.</p>
           {error && <Notice tone="warning"><strong>{error.message}</strong>{error.disponible_para_recargar_hoy !== undefined && <span className="notice__detail">Disponible hoy: {money(error.disponible_para_recargar_hoy, "PEN")}</span>}{error.se_reinicia_at && <span className="notice__detail">El límite se reinicia {dateTime(error.se_reinicia_at)}</span>}<small className="notice__code">Referencia: {error.code}</small></Notice>}
           <Button type="submit" size="lg" disabled={busy || Number(amount) <= 0}>{busy ? "Recargando..." : "Confirmar recarga"}</Button>
         </form>

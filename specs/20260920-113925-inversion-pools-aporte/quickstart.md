@@ -61,11 +61,19 @@ individual (confirmar inspeccionando el JSON completo).
 ```ts
 await supabase.auth.signInWithPassword({ email: "inversionista.demo1@paul.test", password: "DemoStellar2026!" });
 const { data: saldoInicial } = await supabase.rpc("mi_saldo_demostracion");
-const { data: r1 } = await supabase.rpc("recargar_saldo_demo", { p_moneda: "PEN", p_monto: 400 });
+const { data: { session } } = await supabase.auth.getSession();
+const respuesta = await fetch(`${SUPABASE_URL}/functions/v1/recargar-wallet`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ moneda: "PEN", monto: 400, idempotency_key: crypto.randomUUID() }),
+});
+const r1 = await respuesta.json();
 ```
 
-**Esperado**: `r1.saldo_actualizado` = saldo previo + 400; `r1.disponible_para_recargar_hoy` baja
-en 400. Repetir la recarga hasta superar S/1000 acumulados el mismo día: la que exceda el tope
+**Esperado**: `r1.saldo_actualizado` = saldo previo + 400; `r1.tx_hash` existe en Stellar Testnet;
+el balance de `r1.wallet_public_key` aumenta `r1.monto_xlm`; y
+`r1.disponible_para_recargar_hoy` baja en 400. Repetir la recarga hasta superar S/1000 acumulados
+el mismo día: la que exceda el tope
 **Esperado**: falla con `PA011`, y el cuerpo del error indica cuánto queda disponible (debe ser
 `0` o el remanente exacto) y `se_reinicia_at` (00:00 hora de Lima del día siguiente).
 

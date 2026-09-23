@@ -77,17 +77,26 @@ Nunca trae equivalente en XLM (el saldo de demostración es puramente contable, 
 denominado en XLM — muéstralo tal cual, en soles/dólares).
 
 ```ts
-const { data: r, error } = await supabase.rpc("recargar_saldo_demo", { p_moneda: "PEN", p_monto: 200 });
-// { saldo_actualizado, moneda, recargado_hoy_equivalente_soles, tope_diario_equivalente_soles,
-//   disponible_para_recargar_hoy, se_reinicia_at }
+const response = await fetch(`${SUPABASE_URL}/functions/v1/recargar-wallet`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${session.access_token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ moneda: "PEN", monto: 200, idempotency_key: crypto.randomUUID() }),
+});
+// { ok, recarga_id, saldo_actualizado, moneda, monto_xlm, tx_hash, wallet_public_key,
+//   balance_xlm, red, disponible_para_recargar_hoy, se_reinicia_at }
 ```
 
 - Tope: **S/1000 (o equivalente) por día natural en hora de Lima**, compartido entre soles y
   dólares. Usa `disponible_para_recargar_hoy` para deshabilitar/limitar el input antes de
   intentar la llamada, y muestra `se_reinicia_at` si el usuario pregunta cuándo puede recargar de
   nuevo.
-- La recarga **no mueve XLM en la red** — es un crédito contable de demostración. Rotúlalo así en
-  la UI (no es dinero real ni promesa de valor — restricción explícita de la spec).
+- La recarga envía XLM de Testnet a la wallet del inversionista y acredita el saldo contable solo
+  después de confirmarse. Conserva la misma `idempotency_key` al reintentar una solicitud fallida.
+- Muestra un popup de éxito con `monto_xlm`, `balance_xlm` y un enlace a
+  `https://stellar.expert/explorer/testnet/tx/{tx_hash}`. El XLM de Testnet no tiene valor real.
 - `PA011` si excede el tope (el error trae `disponible_para_recargar_hoy` y `se_reinicia_at` para
   no necesitar una segunda llamada). `PA007` si la wallet aún no terminó de aprovisionarse (mismo
   estado de "preparando tu wallet..." que ya manejas del flujo de registro). `PA010` si se recarga

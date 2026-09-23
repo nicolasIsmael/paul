@@ -60,7 +60,8 @@ export function previewPoolDetail(poolId: string): PoolDetail {
 }
 
 export function previewTopUp(moneda: "PEN" | "USD", monto: number): TopUpResult {
-  return { saldo_actualizado: (previewBalances.find((item) => item.moneda === moneda)?.saldo || 0) + monto, moneda, recargado_hoy_equivalente_soles: monto, tope_diario_equivalente_soles: 1000, disponible_para_recargar_hoy: Math.max(0, 1000 - monto), se_reinicia_at: "2026-09-21T05:00:00Z" };
+  const montoXlm = monto / (moneda === "PEN" ? 0.36 : 0.1);
+  return { ok: true, recarga_id: crypto.randomUUID(), saldo_actualizado: (previewBalances.find((item) => item.moneda === moneda)?.saldo || 0) + monto, moneda, monto_xlm: montoXlm, tx_hash: null, wallet_public_key: previewProfile.wallet_public_key!, balance_xlm: 8610.8399767 + montoXlm, red: "stellar-testnet", simulado: true, recargado_hoy_equivalente_soles: monto, tope_diario_equivalente_soles: 1000, disponible_para_recargar_hoy: Math.max(0, 1000 - monto), se_reinicia_at: "2026-09-21T05:00:00Z" };
 }
 
 export function previewQuote(poolId: string, tramo: TrancheType, monto: number): Quote {

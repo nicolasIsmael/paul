@@ -75,8 +75,16 @@ export type PoolDetail = {
 export type Balance = { moneda: Currency; saldo: number };
 
 export type TopUpResult = {
+  ok: true;
+  recarga_id: string;
   saldo_actualizado: number;
   moneda: Currency;
+  monto_xlm: number;
+  tx_hash: string | null;
+  wallet_public_key: string;
+  balance_xlm: number | null;
+  red: "stellar-testnet";
+  simulado?: boolean;
   recargado_hoy_equivalente_soles: number;
   tope_diario_equivalente_soles: number;
   disponible_para_recargar_hoy: number;

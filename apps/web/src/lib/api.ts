@@ -88,11 +88,35 @@ export const api = {
     return unwrap<Balance[]>(supabase.rpc("mi_saldo_demostracion"));
   },
 
-  async topUp(currency: Currency, amount: number) {
+  async topUp(session: Session, currency: Currency, amount: number, idempotencyKey: string) {
     if (isPreviewMode) return previewTopUp(currency, amount);
-    return unwrap<TopUpResult>(
-      supabase.rpc("recargar_saldo_demo", { p_moneda: currency, p_monto: amount }),
-    );
+    const response = await fetch(`${edgeFunctionsUrl}/recargar-wallet`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ moneda: currency, monto: amount, idempotency_key: idempotencyKey }),
+    });
+    const result = (await response.json()) as TopUpResult | { ok: false; error: ApiErrorShape };
+    if (!response.ok || !result.ok) {
+      throw normalizeError("error" in result ? result.error : undefined);
+    }
+    return result;
+  },
+
+  async stellarBalance(publicKey: string | null) {
+    if (!publicKey) return null;
+    if (isPreviewMode) return 8610.8399767;
+    try {
+      const response = await fetch(`https://horizon-testnet.stellar.org/accounts/${encodeURIComponent(publicKey)}`);
+      if (!response.ok) return null;
+      const account = await response.json() as { balances?: Array<{ asset_type: string; balance: string }> };
+      const native = account.balances?.find((balance) => balance.asset_type === "native");
+      return native ? Number(native.balance) : null;
+    } catch {
+      return null;
+    }
   },
 
   async quote(poolId: string, tranche: TrancheType, amount: number) {

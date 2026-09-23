@@ -289,14 +289,17 @@ la reserva, la segunda solicitud que ya no cabe se rechaza **antes** de tocar la
 |---|---|---|---|
 | `empresas_pagadoras`, `operaciones`, `pools`, `tramos` | Sí, sin políticas (deny-all por defecto) | ninguna | **ninguno** — solo accesibles vía `catalogo_pools`/`detalle_pool` (`security definer`) |
 | `tipos_cambio_referencia` | Sí, sin políticas | ninguna | **ninguno** — solo vía `tipo_cambio_vigente()`, usada internamente por otras funciones |
-| `saldos_demostracion`, `recargas_saldo`, `cotizaciones`, `aportes` | Sí, sin políticas | ninguna | **ninguno** — todo acceso vía `mi_saldo_demostracion`, `recargar_saldo_demo`, `cotizar_aporte`, `mis_posiciones`, y las internas de `service_role` |
+| `saldos_demostracion`, `recargas_saldo`, `cotizaciones`, `aportes` | Sí, sin políticas | ninguna | **ninguno** — acceso vía `mi_saldo_demostracion`, `cotizar_aporte`, `mis_posiciones` y funciones internas de `service_role`; la recarga entra por `recargar-wallet` |
 
-Todas las funciones de cliente (`catalogo_pools`, `detalle_pool`, `mi_saldo_demostracion`,
-`recargar_saldo_demo`, `cotizar_aporte`, `mis_posiciones`) son `security definer` con
+Las funciones de cliente (`catalogo_pools`, `detalle_pool`, `mi_saldo_demostracion`,
+`cotizar_aporte`, `mis_posiciones`) son `security definer` con
 `set search_path = ''`, `execute` revocado explícitamente de `public, anon, authenticated` y
 vuelto a conceder **solo** a `authenticated` — nunca a `anon` (todo este flujo requiere sesión).
 Cada una valida `auth.uid()` y el rol (`perfiles.rol = 'inversionista'`) en su propio cuerpo antes
 de tocar cualquier tabla (defensa en profundidad, igual que exige la spec).
+
+`recargar_saldo_demo` queda revocada para clientes desde `0017_recargas_stellar.sql`; la Edge
+Function `recargar-wallet` usa las operaciones internas idempotentes de recarga con `service_role`.
 
 Las funciones internas (`reservar_aporte`, `confirmar_aporte`, `revertir_aporte`,
 `obtener_secreto_wallet`, `aprovisionar_custodia_pool`, `obtener_url_base_functions`) tienen

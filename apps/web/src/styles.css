@@ -247,9 +247,13 @@ h3 { font-size: 1rem; line-height: 1.35; }
 .wallet-address { margin: 26px 0 18px; background: var(--navy-900); color: #fff; border-radius: 6px; min-height: 58px; padding: 0 9px 0 15px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .wallet-address span { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .86rem; }
 .wallet-address .icon-button { background: rgba(255,255,255,.08); color: #fff; border-color: rgba(255,255,255,.12); }
+.wallet-balance { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.wallet-balance span { color: var(--muted); font-size: .7rem; }
+.wallet-balance strong { font-size: 1rem; }
 .wallet-network { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 9px; }
 .wallet-network > span:nth-child(2) { font-size: .78rem; font-weight: 750; }
 .wallet-network small { grid-column: 2; color: var(--muted); font-size: .67rem; }
+.wallet-explorer-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; color: var(--blue); font-size: .7rem; font-weight: 750; }
 
 /* Pool cards and catalog */
 .pool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }

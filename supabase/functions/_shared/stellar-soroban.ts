@@ -37,6 +37,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
+  Account,
   Address,
   Contract,
   Keypair,
@@ -63,7 +64,7 @@ const CONFIRMATION_TIMEOUT_MS = 45_000;
 const server = new rpc.Server(SOROBAN_RPC_URL);
 
 function conTimeout<T>(promise: Promise<T>, mensaje: string, timeoutMs: number): Promise<T> {
-  let timeoutId: number;
+  let timeoutId: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(mensaje)), timeoutMs);
   });
@@ -217,11 +218,7 @@ export async function consultarSoloLectura(
   // que pague fee — solo se usa para construir una transacción sintáctica válida.
   const cuentaFantasma = Keypair.random();
   const cuenta = await server.getAccount(cuentaFantasma.publicKey()).catch(
-    () =>
-      new (server as unknown as { constructor: { Account: unknown } }).constructor.Account(
-        cuentaFantasma.publicKey(),
-        "0",
-      ),
+    () => new Account(cuentaFantasma.publicKey(), "0"),
   );
 
   const contrato = new Contract(contractId);
