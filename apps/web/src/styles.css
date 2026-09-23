@@ -565,6 +565,7 @@ h3 { font-size: 1rem; line-height: 1.35; }
 }
 
 @media (max-width: 680px) {
+  html, body, #root, .app-shell, .main-area { width: 100%; min-width: 0; }
   h1 { font-size: 1.75rem; }
   h2 { font-size: 1.2rem; }
   .app-shell, .main-area { min-height: 100dvh; }
