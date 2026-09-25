@@ -206,6 +206,70 @@ Piezas clave:
        [`total_supply()` +3 exacto](https://stellar.expert/explorer/testnet/contract/CCAQJAZFFITJ6DJY7T6OG343OAURAWGLUQUF3ONKNBN55FMYP3EA7RRE)),
        y las 3 rechazadas por cupo fallaron limpiamente sin tocar la red Stellar.
 
+### Módulo de liquidación de tramo ([specs/20260925-002004-liquidacion-tramo/](specs/20260925-002004-liquidacion-tramo/))
+
+Cierra la mitad del ciclo de inversión que hasta acá no existía: hasta esta feature, el sistema
+solo sabía "el inversionista aporta y recibe fracciones", sin ningún camino de vuelta. Cuando el
+operador de banco confirma que el 100% de las facturas que respaldan un tramo ya se cobraron
+(`estado_cobro = 'cobrada'`, función ya existente de la feature anterior), puede liquidar el tramo
+completo: a cada inversionista con fracciones reales verificadas on-chain se le paga su capital más
+el rendimiento ilustrativo del tramo, en XLM real, y se queman sus fracciones firmando con su
+propia llave (custodiada en Vault, mismo patrón que la llave admin). Exclusivamente
+backend — sin frontend en esta feature, igual que las 3 anteriores. Fuera de alcance a propósito:
+mora, pago parcial, reparto real de pérdidas entre tramo senior/junior (waterfall), y liquidación de
+una sola factura individual — la liquidación es siempre del tramo completo.
+
+Piezas clave:
+- **`tramos.estado_liquidacion`** (`activo -> liquidando -> liquidado`, terminal) y la tabla nueva
+  **`liquidaciones_tramo_inversionista`** (el detalle de cada pago: fracciones reales, monto,
+  ambos `tx_hash`, y si terminó `pagado` o `compensado`).
+- **El pago se calcula siempre sobre `balance()` real on-chain**, nunca sobre un número derivado
+  solo de Postgres (Principio VI) — la lección directa del desface de "Retail Norte" documentado
+  arriba.
+- **Compensación por inversionista, no por tramo**: si a una persona le falla el pago o la quema
+  tras 3 reintentos, se le revierte solo a ella y el resto del tramo se sigue liquidando con
+  normalidad.
+- **Cero código nuevo en el contrato Soroban** — `burn` ya existía con la interfaz necesaria; toda
+  la lógica nueva vive en `supabase/migrations/0018_liquidacion_tramo.sql` y la Edge Function
+  `supabase/functions/liquidar-tramo/`, reutilizando tal cual `pagarXlm`,
+  `invocarContratoAdminConReintentos` y `consultarSoloLectura` ya construidos por la feature previa.
+- **Estado real de esta feature**: migraciones `0018`-`0019` y la Edge Function `liquidar-tramo`
+  desplegadas, **validado en vivo contra el proyecto real y Stellar testnet real** — no un mock.
+  Se liquidó de punta a punta el tramo senior de Manufactura Sur
+  (`CCGH3FI2775BI2KPA5HDTTRBSTSACE2X2H4ZJJ56NWGUBWQ2NWFGQBWO`): el inversionista con la única
+  posición confirmada de ese tramo recibió un pago real de S/101.60 (capital + 1.6% de rendimiento
+  ilustrativo, convertido a XLM al tipo de cambio vigente) en
+  [`98969b6752a3cea4a59349b451a6604a18c949a301204fc07dbb761980522173`](https://stellar.expert/explorer/testnet/tx/98969b6752a3cea4a59349b451a6604a18c949a301204fc07dbb761980522173),
+  seguido de la quema real de su fracción en
+  [`7ac65dd0d9253c9ea4c6554891110b34d0a3a313685e3eb96eb691f2f186a74a`](https://stellar.expert/explorer/testnet/tx/7ac65dd0d9253c9ea4c6554891110b34d0a3a313685e3eb96eb691f2f186a74a).
+  Verificado de forma independiente (`stellar contract invoke ... -- balance`/`total_supply`, sin
+  pasar por el backend de Paul): ambos quedaron en `0` para ese tramo. El tramo quedó
+  `estado_liquidacion = 'liquidado'` (terminal).
+  - **Bug real encontrado y corregido durante esta misma validación**: la primera versión pagaba el
+    monto nominal del tramo (soles) directamente como si fueran XLM, sin convertir — faltaba
+    reutilizar el tipo de cambio de referencia que ya usa `cotizar_aporte`
+    (`0006_tipo_cambio.sql`). Corregido en `0019_liquidacion_tramo_tipo_cambio.sql` (wrapper
+    `obtener_tasa_cambio_liquidacion`, ya que `tipo_cambio_vigente()` es interna y no se expone vía
+    RPC de cliente) antes de mover dinero real; verificado con el aporte real de arriba (S/101.60
+    ÷ tasa vigente = el monto exacto que sí llegó a Horizon).
+  - **Historia 2 (rechazo por facturas sin cobrar)**: validada en vivo sobre Retail Norte
+    senior — `PA022` listando las 6 facturas pendientes, sin mover dinero ni cambiar
+    `estado_liquidacion`. También validado el rechazo por rol (`PA008`) con el JWT de un
+    inversionista.
+  - **Historia 3 (tramo sin ningún aporte)**: validada en vivo sobre un tramo real sin facturas ni
+    aportes — quedó `liquidado` con `resultados: []`, sin error.
+  - **Múltiples inversionistas en un mismo tramo**: validado liquidando Retail Norte senior (3
+    inversionistas reales, 2/2/1 fracciones) en una sola corrida — los 3 pagos y las 3 quemas
+    salieron bien, sin choques entre sí (cada inversionista firma con su propia llave, a diferencia
+    de `mint`/`register_invoice` que comparten la cuenta admin). `total_supply()` de ese tramo
+    verificado en `0` de forma independiente tras la liquidación.
+  - **Pendiente**: el caso de fallo forzado de un inversionista particular (FR-008) no se probó
+    provocando una falla real — todos los intentos reales salieron bien, y forzar una falla a
+    propósito (ej. desconectar la red a mitad de una llamada) es más riesgoso de simular con
+    seguridad contra el proyecto real. El código reutiliza el mismo patrón de compensación ya
+    validado con fallos reales en `confirmar-aporte` (ver más arriba), lo que reduce el riesgo de
+    esa rama sin probarla directamente.
+
 ## Cuentas de demostración
 
 Precargadas por `supabase/seed/00_auth_demo_local.sql` (solo local — en el proyecto remoto ya
