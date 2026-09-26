@@ -699,8 +699,8 @@ h3 { font-size: 1rem; line-height: 1.35; }
   .modal { width: 100%; max-height: calc(100dvh - 10px); border-radius: 8px 8px 0 0; animation-name: sheet-enter; }
   .modal__header { position: sticky; top: 0; z-index: 2; padding: 18px 18px 14px; background: #fff; }
   .modal__body { padding: 18px max(18px, env(safe-area-inset-left)) calc(20px + env(safe-area-inset-bottom)); }
-  .investment-modal--processing { width: calc(100% - 28px); max-height: none; align-self: center; border-radius: 8px; animation-name: modal-enter; }
-  .investment-modal--processing .modal__header { position: static; }
+  .investment-modal--processing, .investment-modal--success { width: calc(100% - 28px); max-height: none; align-self: center; border-radius: 8px; animation-name: modal-enter; }
+  .investment-modal--processing .modal__header, .investment-modal--success .modal__header { position: static; }
   .investment-modal--processing .modal__body { padding-top: 8px; }
   .processing-state { min-height: 0; padding: 30px 0 34px; }
   .processing-state__rings { width: 90px; height: 90px; margin-bottom: 20px; }

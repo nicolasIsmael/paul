@@ -106,7 +106,16 @@ function InvestmentModal({ open, onClose, detail, initialTranche, session, onSuc
     && Math.abs(amountRatio - Math.round(amountRatio)) < 0.0000001
     && numericAmount <= detail.tramos[tranche].cupo_disponible;
 
-  function resetAndClose() { setStep("amount"); setQuote(null); setResult(null); setError(null); idempotencyKey.current = crypto.randomUUID(); onClose(); }
+  function resetAndClose() {
+    const contributionWasConfirmed = result !== null;
+    setStep("amount");
+    setQuote(null);
+    setResult(null);
+    setError(null);
+    idempotencyKey.current = crypto.randomUUID();
+    onClose();
+    if (contributionWasConfirmed) onSuccess();
+  }
 
   async function createQuote(event?: FormEvent) {
     event?.preventDefault();
@@ -122,7 +131,11 @@ function InvestmentModal({ open, onClose, detail, initialTranche, session, onSuc
     if (!session || !quote) return;
     if (secondsLeft <= 0) { setError({ code: "PA004", message: "La cotización expiró. Genera una nueva para continuar." }); setStep("amount"); setQuote(null); return; }
     setStep("processing"); setError(null);
-    try { const confirmation = await api.confirmContribution(session, quote.cotizacion_id, idempotencyKey.current); setResult(confirmation); setStep("success"); onSuccess(); }
+    try {
+      const confirmation = await api.confirmContribution(session, quote.cotizacion_id, idempotencyKey.current);
+      setResult(confirmation);
+      setStep("success");
+    }
     catch (cause) {
       const normalized = normalizeError(cause);
       setError(normalized);
