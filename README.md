@@ -34,23 +34,31 @@
     <td align="center">Recorrido completo del producto en vivo, de punta a punta.</td>
   </tr>
   <tr>
-    <td align="center"><a href="https://canva.link/y3f47uqpmljezlj"><strong>▶ Ver el video pitch</strong></a></td>
+    <td align="center">
+      <a href="https://youtu.be/AWmY0XNfu6c">
+        <img src="https://img.youtube.com/vi/AWmY0XNfu6c/hqdefault.jpg" alt="Video pitch de Paul — ver en YouTube" width="400" />
+      </a>
+      <br />
+      <a href="https://youtu.be/AWmY0XNfu6c"><strong>▶ Ver el video pitch en YouTube</strong></a>
+    </td>
     <td align="center"><a href="PEGAR_URL_CANVA_DEMO"><strong>▶ Ver el video demo</strong></a></td>
   </tr>
 </table>
 
 <!--
-  CÓMO CAMBIAR DE CANVA A YOUTUBE
+  CÓMO EMBEBER EL VIDEO DEMO (cuando esté en YouTube)
   --------------------------------
   GitHub NO permite <iframe> ni reproductores incrustados en un README. Lo que sí funciona es una
-  imagen (miniatura) que enlaza al video. Cuando los videos estén en YouTube, reemplaza cada celda
-  <td> de arriba por este bloque (cambia VIDEO_ID por el código que aparece en la URL del video,
-  por ejemplo youtube.com/watch?v=VIDEO_ID):
+  imagen (miniatura) que enlaza al video, como ya está hecho con el video pitch. Para el video demo,
+  reemplaza la celda <td> de PEGAR_URL_CANVA_DEMO por este bloque (cambia VIDEO_ID por el código
+  que aparece en la URL del video, por ejemplo youtu.be/VIDEO_ID):
 
   <td align="center">
-    <a href="https://www.youtube.com/watch?v=VIDEO_ID">
-      <img src="https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg" alt="Video pitch de Paul" width="400" />
+    <a href="https://youtu.be/VIDEO_ID">
+      <img src="https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg" alt="Video demo de Paul — ver en YouTube" width="400" />
     </a>
+    <br />
+    <a href="https://youtu.be/VIDEO_ID"><strong>▶ Ver el video demo en YouTube</strong></a>
   </td>
 
   Alternativa sin YouTube: editar este README desde la web de GitHub y arrastrar el archivo .mp4
