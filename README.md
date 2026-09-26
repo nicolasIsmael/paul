@@ -41,30 +41,15 @@
       <br />
       <a href="https://youtu.be/AWmY0XNfu6c"><strong>▶ Ver el video pitch en YouTube</strong></a>
     </td>
-    <td align="center"><a href="PEGAR_URL_CANVA_DEMO"><strong>▶ Ver el video demo</strong></a></td>
+    <td align="center">
+      <a href="https://youtu.be/dt_c0VN8DJI">
+        <img src="https://img.youtube.com/vi/dt_c0VN8DJI/hqdefault.jpg" alt="Video demo de Paul — ver en YouTube" width="400" />
+      </a>
+      <br />
+      <a href="https://youtu.be/dt_c0VN8DJI"><strong>▶ Ver el video demo en YouTube</strong></a>
+    </td>
   </tr>
 </table>
-
-<!--
-  CÓMO EMBEBER EL VIDEO DEMO (cuando esté en YouTube)
-  --------------------------------
-  GitHub NO permite <iframe> ni reproductores incrustados en un README. Lo que sí funciona es una
-  imagen (miniatura) que enlaza al video, como ya está hecho con el video pitch. Para el video demo,
-  reemplaza la celda <td> de PEGAR_URL_CANVA_DEMO por este bloque (cambia VIDEO_ID por el código
-  que aparece en la URL del video, por ejemplo youtu.be/VIDEO_ID):
-
-  <td align="center">
-    <a href="https://youtu.be/VIDEO_ID">
-      <img src="https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg" alt="Video demo de Paul — ver en YouTube" width="400" />
-    </a>
-    <br />
-    <a href="https://youtu.be/VIDEO_ID"><strong>▶ Ver el video demo en YouTube</strong></a>
-  </td>
-
-  Alternativa sin YouTube: editar este README desde la web de GitHub y arrastrar el archivo .mp4
-  (máx. 100 MB) al editor; GitHub genera una URL "user-attachments" que, pegada sola en una línea,
-  se muestra como reproductor incrustado.
--->
 
 ---
 
