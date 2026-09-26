@@ -10,21 +10,23 @@ llamada directamente por el cliente — todas se invocan desde la Edge Function 
 |---|---|---|
 | `PA008` | Rol no autorizado (reutilizado tal cual — solo `operador_banco` puede liquidar) | `iniciar_liquidacion_tramo`, FR-002 |
 | `PA019` | Fallo al invocar el contrato Soroban (`burn`), tras agotar reintentos (reutilizado tal cual) | `liquidar-tramo`, FR-008 |
-| `PA021` | El tramo no está en estado `activo` (ya está `liquidando` o `liquidado`) | `iniciar_liquidacion_tramo`, FR-011 |
+| `PA021` | El tramo ya está `liquidado` | `iniciar_liquidacion_tramo`, FR-011 |
 | `PA022` | El tramo tiene al menos una factura asignada que no está `cobrada` | `iniciar_liquidacion_tramo`, FR-003 |
 | `PA023` | Tramo inexistente | `iniciar_liquidacion_tramo` |
+| `PA024` | Existe otro intento de liquidación vigente o el intento perdió su lease | Inicio/finalización |
 
-## `iniciar_liquidacion_tramo(p_tramo_id uuid) returns jsonb`
+## `iniciar_liquidacion_tramo(p_tramo_id uuid, p_intento_id uuid) returns jsonb`
 
-**Entrada**: `p_tramo_id`.
+**Entrada**: `p_tramo_id` y una clave idempotente `p_intento_id`.
 
 **Procesamiento**:
 1. Exige `perfiles.rol = 'operador_banco'` → `PA008`.
 2. `select ... from tramos where id = p_tramo_id for update` → si no existe, `PA023`.
-3. Si `estado_liquidacion <> 'activo'` → `PA021`.
+3. Si está `liquidado` → `PA021`. Si está `liquidando`, solo permite la misma clave o tomar una
+   lease vencida; en otro caso → `PA024`.
 4. Si existe alguna fila en `facturas` con `tramo_id = p_tramo_id` y `estado_cobro <> 'cobrada'`
    → `PA022`, incluyendo en el mensaje los `id` de las facturas pendientes.
-5. `update tramos set estado_liquidacion = 'liquidando' where id = p_tramo_id`.
+5. Marca `liquidando`, guarda la clave del intento y una lease de 10 minutos.
 6. Devuelve la lista de inversionistas a procesar:
 
    ```sql
@@ -65,8 +67,7 @@ reanudación).
 
 Inserta con `estado = 'compensado'`. Mismo `on conflict do nothing`.
 
-## `finalizar_liquidacion_tramo(p_tramo_id uuid) returns void`
+## `finalizar_liquidacion_tramo(p_tramo_id uuid, p_intento_id uuid) returns void`
 
-`update tramos set estado_liquidacion = 'liquidado' where id = p_tramo_id and estado_liquidacion =
-'liquidando'`. El filtro por `'liquidando'` evita marcar `'liquidado'` dos veces si la Edge
-Function se reintenta después de ya haber terminado.
+Solo finaliza si el tramo sigue `liquidando` y `p_intento_id` continúa siendo el intento vigente;
+si perdió la lease devuelve `PA024`.

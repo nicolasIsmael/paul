@@ -1,15 +1,4 @@
-// Feature: Liquidación de Tramo (Cobro Simulado, Camino Feliz)
-// (specs/20260925-002004-liquidacion-tramo)
-// T010-T020: orquesta, para cada inversionista con fracciones reales en el tramo, el pago real en
-// XLM (custodia -> inversionista) seguido de la quema de esas fracciones en el contrato,
-// firmando con la propia llave del inversionista (burn exige from.require_auth() —
-// contracts/soroban-pool/src/lib.rs). Cada inversionista se procesa de forma independiente: un
-// fallo puntual se compensa solo a esa persona (research.md §3), el resto del tramo sigue.
-// Invocada directamente por el cliente autenticado (operador de banco), verify_jwt=true.
-// Contrato completo: contracts/liquidar-tramo-function.md.
-//
-// No se toca el contrato Soroban ni ningún archivo existente — reutiliza tal cual pagarXlm,
-// consultarSoloLectura e invocarContratoAdminConReintentos (research.md §2, §5).
+// Liquidacion de Tramo: pago real en XLM y quema de fracciones en Stellar Testnet.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
@@ -26,9 +15,7 @@ const CORS_HEADERS = {
 };
 
 type ErrorApi = { code: string; message: string; [extra: string]: unknown };
-
-type InversionistaPendiente = { investor_id: string; wallet_public_key: string };
-
+type InversionistaPendiente = { investor_id: string; wallet_public_key: string | null };
 type ResultadoInversionista = {
   investor_id: string;
   fracciones: number;
@@ -55,8 +42,6 @@ function errorDesdeSupabase(err: { code?: string; message: string }): ErrorApi {
   return { code: err.code ?? "PA013", message: err.message };
 }
 
-// T017-T019: registra el resultado de un inversionista (pagado o compensado) y lo agrega al
-// arreglo de resultados que finalmente ve el operador.
 async function registrarPagado(
   resultados: ResultadoInversionista[],
   tramoId: string,
@@ -67,7 +52,7 @@ async function registrarPagado(
   txPago: string | null,
   txQuema: string | null,
 ): Promise<void> {
-  await supabaseService.rpc("registrar_pago_liquidacion", {
+  const { error } = await supabaseService.rpc("registrar_pago_liquidacion", {
     p_tramo_id: tramoId,
     p_investor_id: investorId,
     p_fracciones: fracciones,
@@ -76,6 +61,7 @@ async function registrarPagado(
     p_tx_pago: txPago,
     p_tx_quema: txQuema,
   });
+  if (error) throw new Error(`No se pudo registrar el pago: ${error.message}`);
   resultados.push({
     investor_id: investorId,
     fracciones,
@@ -97,7 +83,7 @@ async function registrarCompensado(
   txPago: string | null = null,
   txQuema: string | null = null,
 ): Promise<void> {
-  await supabaseService.rpc("registrar_liquidacion_compensada", {
+  const { error } = await supabaseService.rpc("registrar_liquidacion_compensada", {
     p_tramo_id: tramoId,
     p_investor_id: investorId,
     p_fracciones: fracciones,
@@ -107,223 +93,238 @@ async function registrarCompensado(
     p_tx_hash_pago: txPago,
     p_tx_hash_quema: txQuema,
   });
+  if (error) throw new Error(`No se pudo registrar la compensacion: ${error.message}`);
   resultados.push({
     investor_id: investorId,
     fracciones,
     monto_pagado: monto,
     estado: "compensado",
     motivo,
+    ...(txPago ? { tx_hash_pago: txPago } : {}),
+    ...(txQuema ? { tx_hash_quema: txQuema } : {}),
   });
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "POST") {
+    return respuestaError({ code: "PA012", message: "Metodo no permitido." }, 405);
   }
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return respuestaError({ code: "PA008", message: "Falta autenticación." }, 401);
-  }
-
-  const supabaseUsuario = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } },
-  );
-
-  const { data: userData, error: userError } = await supabaseUsuario.auth.getUser();
-  if (userError || !userData?.user) {
-    return respuestaError({ code: "PA008", message: "Sesión inválida o expirada." }, 401);
-  }
-  const operadorId = userData.user.id;
-
-  let body: { tramo_id?: string };
   try {
-    body = await req.json();
-  } catch {
-    return respuestaError({ code: "PA012", message: "Cuerpo de la solicitud inválido." }, 400);
-  }
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return respuestaError({ code: "PA008", message: "Falta autenticacion." }, 401);
 
-  if (!body.tramo_id) {
-    return respuestaError({ code: "PA012", message: "tramo_id es obligatorio." }, 400);
-  }
-  const tramoId = body.tramo_id;
-
-  // T010: defensa en profundidad — iniciar_liquidacion_tramo ya está restringida a service_role,
-  // pero validamos el rol aquí también antes de tocar nada (mismo patrón que asignar-factura).
-  const { data: perfil, error: perfilError } = await supabaseService
-    .from("perfiles")
-    .select("rol")
-    .eq("id", operadorId)
-    .single();
-
-  if (perfilError || !perfil || perfil.rol !== "operador_banco") {
-    return respuestaError(
-      { code: "PA008", message: "Solo el operador de banco puede liquidar un tramo." },
-      403,
+    const supabaseUsuario = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } },
     );
-  }
+    const { data: userData, error: userError } = await supabaseUsuario.auth.getUser();
+    if (userError || !userData?.user) {
+      return respuestaError({ code: "PA008", message: "Sesion invalida o expirada." }, 401);
+    }
 
-  // T011: valida (rol de negocio, facturas cobradas, estado del tramo) y arranca la liquidación.
-  // Si falla, responde de inmediato sin tocar Stellar.
-  const { data: inicio, error: inicioError } = await supabaseService.rpc(
-    "iniciar_liquidacion_tramo",
-    { p_tramo_id: tramoId },
-  );
-
-  if (inicioError) {
-    return respuestaError(errorDesdeSupabase(inicioError), 400);
-  }
-
-  const inversionistas = (inicio.inversionistas ?? []) as InversionistaPendiente[];
-
-  // T012: datos del tramo/pool necesarios para calcular el pago de cada inversionista.
-  const { data: tramo } = await supabaseService
-    .from("tramos")
-    .select("pool_id, token_contract_id, rendimiento_ilustrativo_plazo_pct")
-    .eq("id", tramoId)
-    .single();
-
-  if (!tramo?.token_contract_id) {
-    return respuestaError(
-      { code: "PA019", message: "El tramo no tiene un contrato asociado — no se puede liquidar." },
-      400,
-    );
-  }
-
-  const [{ data: pool }, { data: secretoCustodia, error: secretoCustodiaError }] = await Promise.all([
-    supabaseService
-      .from("pools")
-      .select("unidad_minima_aporte, custody_public_key, moneda")
-      .eq("id", tramo.pool_id)
-      .single(),
-    supabaseService.rpc("obtener_secreto_custodia_pool", { p_pool_id: tramo.pool_id }),
-  ]);
-
-  if (!pool?.custody_public_key || secretoCustodiaError || !secretoCustodia) {
-    return respuestaError(
-      { code: "PA019", message: "No se pudo obtener la wallet de custodia del pool." },
-      500,
-    );
-  }
-
-  // El monto se calcula en la moneda del pool (soles/dólares) pero el pago es siempre en XLM —
-  // misma tasa de referencia que usa cotizar_aporte (0006_tipo_cambio.sql, tasa_moneda_por_xlm =
-  // unidades de la moneda por 1 XLM).
-  const { data: tasaMonedaPorXlm, error: tasaError } = await supabaseService.rpc(
-    "obtener_tasa_cambio_liquidacion",
-    { p_moneda: pool.moneda },
-  );
-
-  if (tasaError || !tasaMonedaPorXlm) {
-    return respuestaError(
-      { code: "PA010", message: "No hay tipo de cambio vigente para liquidar este pool." },
-      400,
-    );
-  }
-
-  const resultados: ResultadoInversionista[] = [];
-
-  // T013-T019: cada inversionista se procesa de forma independiente — un fallo puntual no
-  // detiene a los siguientes (FR-008, research.md §3).
-  for (const inv of inversionistas) {
-    let fracciones: number;
+    let body: { tramo_id?: string; idempotency_key?: string };
     try {
-      fracciones = Number(
-        await consultarSoloLectura(tramo.token_contract_id, "balance", [
-          { type: "address", value: inv.wallet_public_key },
-        ]),
-      );
+      body = await req.json();
     } catch {
-      // No se pudo ni siquiera leer el balance — no hay nada que pagar ni que revertir todavía.
-      await registrarCompensado(resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, "fallo_lectura_balance");
-      continue;
+      return respuestaError({ code: "PA012", message: "Cuerpo de la solicitud invalido." }, 400);
+    }
+    if (!body.tramo_id || !body.idempotency_key) {
+      return respuestaError(
+        { code: "PA012", message: "tramo_id e idempotency_key son obligatorios." },
+        400,
+      );
     }
 
-    // T014: sin fracciones reales on-chain, nada que pagar (FR-004) — se deja evidencia igual.
-    if (fracciones === 0) {
-      await registrarPagado(resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, null, null);
-      continue;
+    const tramoId = body.tramo_id;
+    const intentoId = body.idempotency_key;
+    const { data: perfil, error: perfilError } = await supabaseService
+      .from("perfiles")
+      .select("rol")
+      .eq("id", userData.user.id)
+      .single();
+    if (perfilError || !perfil || perfil.rol !== "operador_banco") {
+      return respuestaError(
+        { code: "PA008", message: "Solo el operador de banco puede liquidar un tramo." },
+        403,
+      );
     }
 
-    const monto = fracciones * pool.unidad_minima_aporte *
-      (1 + tramo.rendimiento_ilustrativo_plazo_pct / 100);
-    const montoXlm = monto / tasaMonedaPorXlm;
-
-    const { data: secretoInversionista, error: secretoInvError } = await supabaseService.rpc(
-      "obtener_secreto_wallet",
-      { perfil_id: inv.investor_id },
+    const { data: inicio, error: inicioError } = await supabaseService.rpc(
+      "iniciar_liquidacion_tramo",
+      { p_tramo_id: tramoId, p_intento_id: intentoId },
     );
+    if (inicioError) return respuestaError(errorDesdeSupabase(inicioError), 400);
 
-    if (secretoInvError || !secretoInversionista) {
-      await registrarCompensado(
-        resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, "sin_secreto_wallet",
-      );
-      continue;
-    }
+    const inversionistas = (inicio.inversionistas ?? []) as InversionistaPendiente[];
+    const resultados: ResultadoInversionista[] = [];
 
-    // T015: pago real, custodia -> inversionista.
-    let txPago: string;
-    try {
-      ({ hash: txPago } = await pagarXlm(
-        supabaseService,
-        secretoCustodia,
-        inv.wallet_public_key,
-        montoXlm,
-      ));
-    } catch {
-      await registrarCompensado(
-        resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, "fallo_pago_xlm",
-      );
-      continue;
-    }
-
-    // T016: quema real, firmada con la llave del propio inversionista (from.require_auth()).
-    try {
-      const { hash: txQuema } = await invocarContratoAdminConReintentos(
-        supabaseService,
-        secretoInversionista,
-        tramo.token_contract_id,
-        "burn",
-        [
-          { type: "address", value: inv.wallet_public_key },
-          { type: "i128", value: fracciones },
-        ],
-      );
-      // T017
-      await registrarPagado(resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, txPago, txQuema);
-    } catch (err) {
-      // T018: la quema falló tras reintentos, pero el pago ya se ejecutó — revertirlo
-      // (inversionista -> custodia, dirección inversa).
-      console.error("Fallo al quemar fracciones al liquidar, revirtiendo el pago", {
-        tramoId,
-        investorId: inv.investor_id,
-        error: err instanceof Error ? err.message : String(err),
+    // Un tramo sin aportes se puede cerrar sin exigir contrato ni custodia (FR-009).
+    if (inversionistas.length === 0) {
+      const { error } = await supabaseService.rpc("finalizar_liquidacion_tramo", {
+        p_tramo_id: tramoId,
+        p_intento_id: intentoId,
       });
-      try {
-        await pagarXlm(supabaseService, secretoInversionista, pool.custody_public_key, montoXlm);
-      } catch {
-        // El propio reembolso también falló — se deja evidencia igual (motivo distinto), requiere
-        // reconciliación manual (mismo límite conocido que compensarYResponder en confirmar-aporte).
+      if (error) return respuestaError(errorDesdeSupabase(error), 409);
+      return new Response(
+        JSON.stringify({ ok: true, tramo_id: tramoId, estado_liquidacion: "liquidado", resultados }),
+        { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      );
+    }
+
+    const { data: tramo, error: tramoError } = await supabaseService
+      .from("tramos")
+      .select("pool_id, token_contract_id, rendimiento_ilustrativo_plazo_pct")
+      .eq("id", tramoId)
+      .single();
+    if (tramoError || !tramo?.token_contract_id) {
+      return respuestaError(
+        { code: "PA019", message: "El tramo no tiene un contrato asociado." },
+        400,
+      );
+    }
+
+    const [{ data: pool, error: poolError }, { data: secretoCustodia, error: secretoCustodiaError }] =
+      await Promise.all([
+        supabaseService
+          .from("pools")
+          .select("unidad_minima_aporte, custody_public_key, moneda")
+          .eq("id", tramo.pool_id)
+          .single(),
+        supabaseService.rpc("obtener_secreto_custodia_pool", { p_pool_id: tramo.pool_id }),
+      ]);
+    if (poolError || !pool?.custody_public_key || secretoCustodiaError || !secretoCustodia) {
+      return respuestaError(
+        { code: "PA019", message: "No se pudo obtener la wallet de custodia del pool." },
+        500,
+      );
+    }
+
+    const { data: tasaMonedaPorXlm, error: tasaError } = await supabaseService.rpc(
+      "obtener_tasa_cambio_liquidacion",
+      { p_moneda: pool.moneda },
+    );
+    if (tasaError || !tasaMonedaPorXlm) {
+      return respuestaError(
+        { code: "PA010", message: "No hay tipo de cambio vigente para liquidar este pool." },
+        400,
+      );
+    }
+
+    for (const inv of inversionistas) {
+      if (!inv.wallet_public_key) {
         await registrarCompensado(
-          resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda,
-          "fallo_quema_onchain_y_reembolso", txPago, null,
+          resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, "sin_wallet_publica",
         );
         continue;
       }
-      await registrarCompensado(
-        resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda,
-        "fallo_quema_onchain", txPago, null,
+      let fracciones: number;
+      try {
+        fracciones = Number(await consultarSoloLectura(tramo.token_contract_id, "balance", [
+          { type: "address", value: inv.wallet_public_key },
+        ]));
+      } catch {
+        await registrarCompensado(
+          resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, "fallo_lectura_balance",
+        );
+        continue;
+      }
+
+      if (!Number.isSafeInteger(fracciones) || fracciones < 0) {
+        await registrarCompensado(
+          resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, "balance_onchain_invalido",
+        );
+        continue;
+      }
+      if (fracciones === 0) {
+        await registrarPagado(resultados, tramoId, inv.investor_id, 0, 0, pool.moneda, null, null);
+        continue;
+      }
+
+      const monto = Math.round(
+        fracciones * Number(pool.unidad_minima_aporte) *
+          (1 + Number(tramo.rendimiento_ilustrativo_plazo_pct) / 100) * 100,
+      ) / 100;
+      const montoXlm = Math.round((monto / Number(tasaMonedaPorXlm)) * 1e7) / 1e7;
+      const { data: secretoInversionista, error: secretoInvError } = await supabaseService.rpc(
+        "obtener_secreto_wallet",
+        { perfil_id: inv.investor_id },
       );
+      if (secretoInvError || !secretoInversionista) {
+        await registrarCompensado(
+          resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, "sin_secreto_wallet",
+        );
+        continue;
+      }
+
+      let txPago: string;
+      try {
+        ({ hash: txPago } = await pagarXlm(
+          supabaseService,
+          secretoCustodia,
+          inv.wallet_public_key,
+          montoXlm,
+        ));
+      } catch {
+        await registrarCompensado(
+          resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, "fallo_pago_xlm",
+        );
+        continue;
+      }
+
+      try {
+        const { hash: txQuema } = await invocarContratoAdminConReintentos(
+          supabaseService,
+          secretoInversionista,
+          tramo.token_contract_id,
+          "burn",
+          [
+            { type: "address", value: inv.wallet_public_key },
+            { type: "i128", value: fracciones },
+          ],
+        );
+        await registrarPagado(
+          resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda, txPago, txQuema,
+        );
+      } catch (error) {
+        console.error("Fallo al quemar fracciones; se intentara revertir el pago", {
+          tramoId,
+          investorId: inv.investor_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        try {
+          await pagarXlm(supabaseService, secretoInversionista, pool.custody_public_key, montoXlm);
+        } catch {
+          await registrarCompensado(
+            resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda,
+            "fallo_quema_onchain_y_reembolso", txPago, null,
+          );
+          continue;
+        }
+        await registrarCompensado(
+          resultados, tramoId, inv.investor_id, fracciones, monto, pool.moneda,
+          "fallo_quema_onchain", txPago, null,
+        );
+      }
     }
+
+    const { error: cierreError } = await supabaseService.rpc("finalizar_liquidacion_tramo", {
+      p_tramo_id: tramoId,
+      p_intento_id: intentoId,
+    });
+    if (cierreError) return respuestaError(errorDesdeSupabase(cierreError), 409);
+
+    return new Response(
+      JSON.stringify({ ok: true, tramo_id: tramoId, estado_liquidacion: "liquidado", resultados }),
+      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    console.error("Error no controlado al liquidar tramo", error);
+    return respuestaError(
+      { code: "PA013", message: "No se pudo completar la liquidacion. Puedes reanudarla." },
+      500,
+    );
   }
-
-  // T020: todos los inversionistas de la lista quedaron pagados o compensados — cerrar el tramo.
-  await supabaseService.rpc("finalizar_liquidacion_tramo", { p_tramo_id: tramoId });
-
-  return new Response(
-    JSON.stringify({ ok: true, tramo_id: tramoId, estado_liquidacion: "liquidado", resultados }),
-    { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-  );
 });

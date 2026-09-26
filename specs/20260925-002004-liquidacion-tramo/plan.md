@@ -18,8 +18,9 @@ real (custodia → inversionista) y quema esas fracciones en el contrato, firman
 llave del inversionista (ya custodiada en Vault, mismo patrón que la llave admin). Un fallo
 puntual en un inversionista se compensa solo a esa persona; el resto del tramo se sigue procesando.
 Mora, pago parcial y el reparto real de pérdidas entre tramo senior/junior (waterfall) quedan fuera
-de alcance a propósito. **No se construye ningún frontend en este plan** — sigue siendo capacidad
-de backend/contrato, igual que las 3 features previas.
+de alcance a propósito. El plan original cubría solo backend/contrato. La integración posterior
+`0021_liquidacion_operador_y_reanudacion.sql` añade la bandeja React del operador, control de
+cobranza, confirmación, resultados y reanudación idempotente sin ampliar la lógica financiera.
 
 ## Technical Context
 

@@ -24,7 +24,7 @@ Con al menos una factura del tramo todavía en `estado_cobro <> 'cobrada'`:
 ```http
 POST /functions/v1/liquidar-tramo
 Authorization: Bearer <jwt operador>
-{ "tramo_id": "<id del tramo senior de Manufactura Sur>" }
+{ "tramo_id": "<id del tramo senior de Manufactura Sur>", "idempotency_key": "<uuid del intento>" }
 ```
 
 **Esperado**: `ok: false`, `error.code = 'PA022'`, listando el/los `id` de la(s) factura(s) que
@@ -43,7 +43,7 @@ Marcar como `cobrada` todas las facturas del tramo (paso 0), luego:
 ```http
 POST /functions/v1/liquidar-tramo
 Authorization: Bearer <jwt operador>
-{ "tramo_id": "<id del tramo senior de Manufactura Sur>" }
+{ "tramo_id": "<id del tramo senior de Manufactura Sur>", "idempotency_key": "<uuid del intento>" }
 ```
 
 **Esperado**: `ok: true`, `estado_liquidacion: "liquidado"`, y un objeto en `resultados` por cada
@@ -73,7 +73,7 @@ ninguna, se salta este paso — FR-003 no aplica a un tramo sin facturas).
 ```http
 POST /functions/v1/liquidar-tramo
 Authorization: Bearer <jwt operador>
-{ "tramo_id": "<id de un tramo sin aportes>" }
+{ "tramo_id": "<id de un tramo sin aportes>", "idempotency_key": "<uuid del intento>" }
 ```
 
 **Esperado**: `ok: true`, `estado_liquidacion: "liquidado"`, `resultados: []` — sin error, sin
@@ -95,9 +95,10 @@ individual no bloquea al resto del tramo).
 
 Simular una caída de la Edge Function a mitad de una liquidación con 3+ inversionistas (ej.
 cortando la ejecución manualmente después del primer inversionista procesado). Volver a invocar
-`liquidar-tramo` con el mismo `tramo_id`.
+`liquidar-tramo` con el mismo `tramo_id` y la misma `idempotency_key` del intento interrumpido.
 
-**Esperado**: el inversionista ya procesado **no** se vuelve a pagar ni a quemar (no aparece de
+**Esperado**: la lease acepta la reanudación del mismo intento y el inversionista ya procesado
+**no** se vuelve a pagar ni a quemar (no aparece de
 nuevo en `iniciar_liquidacion_tramo`, gracias al `not exists` sobre
 `liquidaciones_tramo_inversionista`); el resto se procesa normalmente y el tramo termina
 `'liquidado'`.

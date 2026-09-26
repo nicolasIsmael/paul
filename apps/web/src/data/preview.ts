@@ -1,8 +1,12 @@
-import type { Balance, ContributionResult, Pool, PoolDetail, Position, Profile, Quote, TopUpResult, TrancheType } from "../types/domain";
+import type { Balance, ContributionResult, LiquidationTranche, OperatorInvoice, Pool, PoolDetail, Position, Profile, Quote, TopUpResult, TrancheType } from "../types/domain";
+
+const previewRole = new URLSearchParams(window.location.search).get("role") === "operator"
+  ? "operador_banco"
+  : "inversionista";
 
 export const previewProfile: Profile = {
-  rol: "inversionista",
-  nombre_completo: "Andrea Mendoza",
+  rol: previewRole,
+  nombre_completo: previewRole === "operador_banco" ? "Operador Demo" : "Andrea Mendoza",
   telefono: "+51 987 654 321",
   foto_url: null,
   wallet_public_key: "GA3F7XPQ6VZXK5P9L2QC8W7H4EJMDYXR6B2NZL4HU8W9T5K2",
@@ -26,6 +30,19 @@ export const previewPositions: Position[] = [
   { aporte_id: "aporte-1", pool_id: "pool-solar", pool_nombre: "Energía Solar Perú", pool_estado: "abierto", tramo_tipo: "senior", monto_nominal: 500, moneda: "PEN", xlm_pagados: 1388.8889, tipo_cambio_aplicado: 0.36, confirmado_at: "2026-09-19T16:30:00Z" },
   { aporte_id: "aporte-2", pool_id: "pool-agro", pool_nombre: "Agroexportación Norte", pool_estado: "abierto", tramo_tipo: "junior", monto_nominal: 220, moneda: "USD", xlm_pagados: 611.1111, tipo_cambio_aplicado: 0.36, confirmado_at: "2026-09-18T20:15:00Z" },
   { aporte_id: "aporte-3", pool_id: "pool-retail", pool_nombre: "Retail Andino", pool_estado: "abierto", tramo_tipo: "senior", monto_nominal: 300, moneda: "PEN", xlm_pagados: 833.3333, tipo_cambio_aplicado: 0.36, confirmado_at: "2026-09-16T14:05:00Z" },
+];
+
+export const previewLiquidationTranches: LiquidationTranche[] = [
+  { tramo_id: "tramo-solar-senior", pool_id: "pool-solar", pool_nombre: "Energía Solar Perú", moneda: "PEN", pool_estado: "fondeado", tramo_tipo: "senior", rendimiento_pct: 3.2, capital_comprometido: 35000, estado_liquidacion: "activo", token_contract_id: "CDL6PREVIEWSTELLARCONTRACTSENIOR", facturas_total: 2, facturas_cobradas: 1, facturas_pendientes: 1, facturas_en_mora: 0, inversionistas_total: 3, resultados_pagados: 0, resultados_compensados: 0 },
+  { tramo_id: "tramo-solar-junior", pool_id: "pool-solar", pool_nombre: "Energía Solar Perú", moneda: "PEN", pool_estado: "fondeado", tramo_tipo: "junior", rendimiento_pct: 7.8, capital_comprometido: 15000, estado_liquidacion: "liquidando", token_contract_id: "CDL6PREVIEWSTELLARCONTRACTJUNIOR", facturas_total: 1, facturas_cobradas: 1, facturas_pendientes: 0, facturas_en_mora: 0, inversionistas_total: 2, resultados_pagados: 1, resultados_compensados: 0 },
+  { tramo_id: "tramo-agro-senior", pool_id: "pool-agro", pool_nombre: "Agroexportación Norte", moneda: "USD", pool_estado: "cerrado", tramo_tipo: "senior", rendimiento_pct: 4.1, capital_comprometido: 22400, estado_liquidacion: "liquidado", token_contract_id: "CDL6PREVIEWSTELLARCONTRACTPAID", facturas_total: 1, facturas_cobradas: 1, facturas_pendientes: 0, facturas_en_mora: 0, inversionistas_total: 2, resultados_pagados: 2, resultados_compensados: 0 },
+];
+
+export const previewOperatorInvoices: OperatorInvoice[] = [
+  { id: "factura-1", proveedor_nombre: "Soluciones Andinas SAC", deudor_nombre: "Energía Lima SA", deudor_sector: "servicios", moneda: "PEN", monto_nominal: 28000, fecha_emision: "2026-08-18", fecha_vencimiento: "2026-10-18", estado_validacion: "aprobada", motivo_rechazo: null, estado_asignacion: "asignada", estado_cobro: "cobrada", pool_id: "pool-solar", tramo_id: "tramo-solar-senior", anticipo: 21000 },
+  { id: "factura-2", proveedor_nombre: "Paneles del Sur SAC", deudor_nombre: "Infraestructura Verde SA", deudor_sector: "construccion", moneda: "PEN", monto_nominal: 19000, fecha_emision: "2026-08-25", fecha_vencimiento: "2026-10-25", estado_validacion: "aprobada", motivo_rechazo: null, estado_asignacion: "asignada", estado_cobro: "pendiente", pool_id: "pool-solar", tramo_id: "tramo-solar-senior", anticipo: 14000 },
+  { id: "factura-3", proveedor_nombre: "Servicios Fotovoltaicos SAC", deudor_nombre: "Energía Lima SA", deudor_sector: "servicios", moneda: "PEN", monto_nominal: 20000, fecha_emision: "2026-08-20", fecha_vencimiento: "2026-10-20", estado_validacion: "aprobada", motivo_rechazo: null, estado_asignacion: "asignada", estado_cobro: "cobrada", pool_id: "pool-solar", tramo_id: "tramo-solar-junior", anticipo: 15000 },
+  { id: "factura-4", proveedor_nombre: "Agroinsumos Norte SAC", deudor_nombre: "Exportadora Pacífico SA", deudor_sector: "manufactura", moneda: "USD", monto_nominal: 30000, fecha_emision: "2026-07-10", fecha_vencimiento: "2026-10-10", estado_validacion: "aprobada", motivo_rechazo: null, estado_asignacion: "asignada", estado_cobro: "cobrada", pool_id: "pool-agro", tramo_id: "tramo-agro-senior", anticipo: 22400 },
 ];
 
 export function previewPoolDetail(poolId: string): PoolDetail {

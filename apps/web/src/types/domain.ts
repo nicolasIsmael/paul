@@ -3,6 +3,8 @@ export type Currency = "PEN" | "USD";
 export type RiskProfile = "conservador" | "balanceado" | "agresivo";
 export type PoolStatus = "abierto" | "fondeado" | "cerrado";
 export type TrancheType = "senior" | "junior";
+export type CollectionStatus = "pendiente" | "cobrada" | "en_mora";
+export type LiquidationStatus = "activo" | "liquidando" | "liquidado";
 
 export type Profile = {
   rol: Role;
@@ -134,6 +136,61 @@ export type ContributionResult = {
     red: "stellar-testnet";
     simulado: boolean;
   };
+};
+
+export type OperatorInvoice = {
+  id: string;
+  proveedor_nombre: string;
+  deudor_nombre: string;
+  deudor_sector: string;
+  moneda: Currency;
+  monto_nominal: number;
+  fecha_emision: string;
+  fecha_vencimiento: string;
+  estado_validacion: "aprobada" | "rechazada";
+  motivo_rechazo: string | null;
+  estado_asignacion: "sin_asignar" | "pendiente_onchain" | "asignada";
+  estado_cobro: CollectionStatus;
+  pool_id: string | null;
+  tramo_id: string | null;
+  anticipo: number | null;
+};
+
+export type LiquidationTranche = {
+  tramo_id: string;
+  pool_id: string;
+  pool_nombre: string;
+  moneda: Currency;
+  pool_estado: PoolStatus;
+  tramo_tipo: TrancheType;
+  rendimiento_pct: number;
+  capital_comprometido: number;
+  estado_liquidacion: LiquidationStatus;
+  token_contract_id: string | null;
+  facturas_total: number;
+  facturas_cobradas: number;
+  facturas_pendientes: number;
+  facturas_en_mora: number;
+  inversionistas_total: number;
+  resultados_pagados: number;
+  resultados_compensados: number;
+};
+
+export type LiquidationInvestorResult = {
+  investor_id: string;
+  fracciones: number;
+  monto_pagado: number;
+  estado: "pagado" | "compensado";
+  motivo?: string;
+  tx_hash_pago?: string;
+  tx_hash_quema?: string;
+};
+
+export type LiquidationResult = {
+  ok: true;
+  tramo_id: string;
+  estado_liquidacion: "liquidado";
+  resultados: LiquidationInvestorResult[];
 };
 
 export type ApiErrorShape = {

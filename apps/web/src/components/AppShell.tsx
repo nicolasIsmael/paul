@@ -2,6 +2,7 @@ import {
   BriefcaseBusiness,
   ChevronDown,
   CircleUserRound,
+  CircleDollarSign,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -26,6 +27,7 @@ const investorNavigation = [
 const operatorNavigation = [
   { to: "/", label: "Resumen", mobileLabel: "Resumen", icon: LayoutDashboard, end: true },
   { to: "/pools", label: "Pools", mobileLabel: "Pools", icon: PieChart },
+  { to: "/liquidaciones", label: "Liquidaciones", mobileLabel: "Liquidar", icon: CircleDollarSign },
   { to: "/perfil", label: "Mi perfil", mobileLabel: "Perfil", icon: CircleUserRound },
 ];
 

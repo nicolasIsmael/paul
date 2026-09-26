@@ -2,6 +2,8 @@ import type { Session } from "@supabase/supabase-js";
 import {
   previewBalances,
   previewContribution,
+  previewLiquidationTranches,
+  previewOperatorInvoices,
   previewPoolDetail,
   previewPools,
   previewPositions,
@@ -22,6 +24,10 @@ import type {
   Position,
   Profile,
   Quote,
+  CollectionStatus,
+  LiquidationResult,
+  LiquidationTranche,
+  OperatorInvoice,
   TopUpResult,
   TrancheType,
 } from "../types/domain";
@@ -150,5 +156,52 @@ export const api = {
   async positions() {
     if (isPreviewMode) return [...previewPositions];
     return unwrap<Position[]>(supabase.rpc("mis_posiciones"));
+  },
+
+  async operatorInvoices() {
+    if (isPreviewMode) return previewOperatorInvoices.map((invoice) => ({ ...invoice })) as OperatorInvoice[];
+    return unwrap<OperatorInvoice[]>(supabase.rpc("listar_facturas_operador", {
+      p_estado_validacion: "aprobada",
+      p_estado_asignacion: "asignada",
+    }));
+  },
+
+  async liquidationTranches() {
+    if (isPreviewMode) return previewLiquidationTranches.map((tranche) => ({ ...tranche })) as LiquidationTranche[];
+    return unwrap<LiquidationTranche[]>(supabase.rpc("listar_tramos_liquidacion_operador"));
+  },
+
+  async updateInvoiceCollection(invoiceId: string, status: CollectionStatus) {
+    if (isPreviewMode) return;
+    await unwrap<void>(supabase.rpc("actualizar_estado_cobro_factura", {
+      p_factura_id: invoiceId,
+      p_nuevo_estado: status,
+    }));
+  },
+
+  async liquidateTranche(session: Session, trancheId: string, idempotencyKey: string) {
+    if (isPreviewMode) {
+      return {
+        ok: true,
+        tramo_id: trancheId,
+        estado_liquidacion: "liquidado",
+        resultados: [
+          { investor_id: "preview-investor-1", fracciones: 4, monto_pagado: 412.8, estado: "pagado" },
+          { investor_id: "preview-investor-2", fracciones: 3, monto_pagado: 309.6, estado: "pagado" },
+          { investor_id: "preview-investor-3", fracciones: 2, monto_pagado: 206.4, estado: "pagado" },
+        ],
+      } as LiquidationResult;
+    }
+    const response = await fetch(`${edgeFunctionsUrl}/liquidar-tramo`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tramo_id: trancheId, idempotency_key: idempotencyKey }),
+    });
+    const result = (await response.json()) as LiquidationResult | { ok: false; error: ApiErrorShape };
+    if (!response.ok || !result.ok) throw normalizeError("error" in result ? result.error : undefined);
+    return result;
   },
 };

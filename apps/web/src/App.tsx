@@ -13,6 +13,7 @@ const PoolsPage = lazy(() => import("./pages/PoolsPage").then((module) => ({ def
 const PoolDetailPage = lazy(() => import("./pages/PoolDetailPage").then((module) => ({ default: module.PoolDetailPage })));
 const PositionsPage = lazy(() => import("./pages/PositionsPage").then((module) => ({ default: module.PositionsPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
+const LiquidationsPage = lazy(() => import("./pages/LiquidationsPage").then((module) => ({ default: module.LiquidationsPage })));
 
 function ProtectedLayout() {
   const { session, profile, loading, profileLoading, profileError, refreshProfile, signOut } = useAuth();
@@ -35,7 +36,12 @@ function InvestorOnly({ children }: { children: React.ReactNode }) {
   return profile?.rol === "inversionista" ? children : <Navigate to="/" replace />;
 }
 
+function OperatorOnly({ children }: { children: React.ReactNode }) {
+  const { profile } = useAuth();
+  return profile?.rol === "operador_banco" ? children : <Navigate to="/" replace />;
+}
+
 export default function App() {
   if (!isSupabaseConfigured && !isPreviewMode) return <ConfigurationPage />;
-  return <Suspense fallback={<PageLoader label="Cargando pantalla" />}><Routes><Route path="/acceso" element={<AuthPage />} /><Route element={<ProtectedLayout />}><Route index element={<DashboardPage />} /><Route path="pools" element={<PoolsPage />} /><Route path="pools/:poolId" element={<PoolDetailPage />} /><Route path="posiciones" element={<InvestorOnly><PositionsPage /></InvestorOnly>} /><Route path="perfil" element={<ProfilePage />} /></Route><Route path="*" element={<NotFoundPage />} /></Routes></Suspense>;
+  return <Suspense fallback={<PageLoader label="Cargando pantalla" />}><Routes><Route path="/acceso" element={<AuthPage />} /><Route element={<ProtectedLayout />}><Route index element={<DashboardPage />} /><Route path="pools" element={<PoolsPage />} /><Route path="pools/:poolId" element={<PoolDetailPage />} /><Route path="posiciones" element={<InvestorOnly><PositionsPage /></InvestorOnly>} /><Route path="liquidaciones" element={<OperatorOnly><LiquidationsPage /></OperatorOnly>} /><Route path="perfil" element={<ProfilePage />} /></Route><Route path="*" element={<NotFoundPage />} /></Routes></Suspense>;
 }

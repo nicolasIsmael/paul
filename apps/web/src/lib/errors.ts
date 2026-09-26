@@ -16,6 +16,11 @@ const messages: Record<string, string> = {
   PA011: "La recarga supera el límite diario disponible.",
   PA012: "No encontramos el recurso solicitado.",
   PA013: "Stellar no pudo procesar la operación. Intenta nuevamente.",
+  PA019: "Falta completar la configuración on-chain de este tramo.",
+  PA021: "Este tramo ya fue liquidado.",
+  PA022: "Todavía existen facturas sin cobrar en este tramo.",
+  PA023: "No encontramos el tramo solicitado.",
+  PA024: "Ya existe una liquidación en curso para este tramo.",
 };
 
 function parseDetails(details?: string | null) {

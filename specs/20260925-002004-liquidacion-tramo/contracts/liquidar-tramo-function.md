@@ -12,20 +12,20 @@ POST /functions/v1/liquidar-tramo
 Authorization: Bearer <jwt del operador de banco>
 Content-Type: application/json
 
-{ "tramo_id": "uuid" }
+{ "tramo_id": "uuid", "idempotency_key": "uuid" }
 ```
 
-Sin `idempotency_key` explícito — `tramo_id` ya es la clave natural (un tramo solo puede tener una
-liquidación en curso a la vez, garantizado por `estado_liquidacion`); reintentar la solicitud
-completa es seguro gracias a la idempotencia de `iniciar_liquidacion_tramo` (salta a
-inversionistas ya procesados) y de `registrar_pago_liquidacion`/`registrar_liquidacion_compensada`
-(`on conflict do nothing`).
+`idempotency_key` identifica el intento activo y se conserva en el cliente mientras la operación
+no termine. La migración `0021` usa una lease de 10 minutos para impedir dos ejecuciones on-chain
+concurrentes y permite reanudar una interrupción con la misma clave. Los inversionistas ya
+procesados se omiten mediante `liquidaciones_tramo_inversionista`.
 
 ## Procesamiento
 
 1. Valida el JWT y `perfiles.rol = 'operador_banco'` (`service_role`, defensa en profundidad) →
    `403 PA008` si no.
-2. Llama a `iniciar_liquidacion_tramo(tramo_id)` (`service_role`) → `PA021`/`PA022`/`PA023` si
+2. Llama a `iniciar_liquidacion_tramo(tramo_id, idempotency_key)` (`service_role`) →
+   `PA021`/`PA022`/`PA023`/`PA024` si
    corresponde (respuesta inmediata, no se llega a tocar Stellar).
 3. Lee del tramo: `unidad_minima_aporte` (del pool), `rendimiento_ilustrativo_plazo_pct`,
    `token_contract_id`, y la wallet de custodia del pool (`obtener_secreto_custodia_pool`, mismo
@@ -55,7 +55,8 @@ inversionistas ya procesados) y de `registrar_pago_liquidacion`/`registrar_liqui
       - Si el propio paso 4.5 (`pagarXlm`) falla: no hubo pago que revertir —
         `registrar_liquidacion_compensada(tramo_id, investor_id, fracciones, monto, moneda,
         "fallo_pago_xlm", null, null)`.
-5. Una vez procesados todos los inversionistas de la lista: `finalizar_liquidacion_tramo(tramo_id)`
+5. Una vez procesados todos los inversionistas de la lista:
+   `finalizar_liquidacion_tramo(tramo_id, idempotency_key)`
    (FR-010).
 6. Responde con el resultado agregado.
 
