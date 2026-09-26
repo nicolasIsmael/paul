@@ -269,6 +269,14 @@ Piezas clave:
     seguridad contra el proyecto real. El código reutiliza el mismo patrón de compensación ya
     validado con fallos reales en `confirmar-aporte` (ver más arriba), lo que reduce el riesgo de
     esa rama sin probarla directamente.
+  - **Segundo bug real encontrado y corregido, después de la validación inicial**:
+    `cotizar_aporte`/`reservar_aporte` (`0008_cotizaciones_aportes.sql`, anterior a esta feature)
+    nunca revisaban `tramos.estado_liquidacion` — un inversionista podía, en teoría, cotizar y
+    confirmar un aporte sobre un tramo que ya le había pagado a todos y ya había quemado sus
+    fracciones. Corregido en `0020_bloquear_aportes_tramo_liquidado.sql` (mismo código `PA006` que
+    ya usaba el pool cerrado, mensaje distinto para el caso de tramo liquidado). Verificado en vivo
+    contra Manufactura Sur senior (rechaza con `PA006`) y contra un tramo activo (Servicios Lima
+    senior, sigue cotizando con normalidad — sin regresión).
 
 ## Cuentas de demostración
 
